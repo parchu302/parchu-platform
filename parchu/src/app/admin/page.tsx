@@ -1,23 +1,29 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 
 import { LogoutButton } from "@/components/auth/LogoutButton";
 import { requireRole } from "@/lib/auth-guard";
+import { countPlatformStats } from "@/repositories/business-repository";
 
 export const metadata: Metadata = {
   title: "Administración — ParchU",
 };
 
-// Las estadisticas reales se implementan en la siguiente fase; aqui solo se
-// verifica que el administrador aterriza en su panel tras iniciar sesion.
-const STAT_LABELS = [
-  "Emprendimientos",
-  "Productos",
-  "Pedidos",
-  "Pendientes de aprobación",
-];
-
 export default async function AdminPage() {
   await requireRole("ADMIN");
+
+  const stats = await countPlatformStats();
+
+  const cards = [
+    { key: "businesses", label: "Emprendimientos", value: stats.businesses },
+    { key: "products", label: "Productos", value: stats.products },
+    { key: "orders", label: "Pedidos", value: stats.orders },
+    {
+      key: "pending",
+      label: "Pendientes de aprobación",
+      value: stats.pendingBusinesses,
+    },
+  ];
 
   return (
     <main className="mx-auto w-full max-w-[1100px] px-6 py-12">
@@ -27,18 +33,28 @@ export default async function AdminPage() {
       </div>
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-6">
-        {STAT_LABELS.map((label) => (
+        {cards.map((card) => (
           <div
-            key={label}
+            key={card.key}
+            data-stat={card.key}
             className="rounded border-2 border-ink bg-paper-2 p-6"
           >
             <div className="font-mono text-[12px] font-bold uppercase tracking-[.08em] text-teal">
-              {label}
+              {card.label}
             </div>
-            <div className="mt-2 font-display text-[32px] text-ink/40">—</div>
+            <div data-stat-value className="mt-2 font-display text-[32px]">
+              {card.value}
+            </div>
           </div>
         ))}
       </div>
+
+      <Link
+        href="/admin/emprendimientos"
+        className="mt-8 inline-block rounded-[3px] border-2 border-ink bg-ink px-[26px] py-[15px] text-[15.5px] font-bold text-paper no-underline"
+      >
+        Gestionar emprendimientos
+      </Link>
     </main>
   );
 }

@@ -1,0 +1,107 @@
+import { expect, type Page } from "@playwright/test";
+
+import { db } from "@/lib/db";
+import { hashPassword } from "@/lib/password";
+
+import { VALID_PASSWORD } from "./world";
+
+export const ERROR_SELECTOR =
+  "[data-field-error], [data-testid='auth-error'], [data-testid='business-error']";
+
+// El click solo despacha el envio: la Server Action es asincrona. Hay que
+// esperar a uno de sus dos desenlaces (navego, o aparecio un error) antes de
+// aseverar nada.
+export async function waitForFormOutcome(page: Page, settledUrl: RegExp) {
+  await expect
+    .poll(
+      async () => {
+        if (settledUrl.test(page.url())) return "navegado";
+        const errors = await page.locator(ERROR_SELECTOR).count();
+        return errors > 0 ? "error" : "pendiente";
+      },
+      { timeout: 15_000 },
+    )
+    .not.toBe("pendiente");
+}
+
+export const AUTH_SETTLED = /\/(panel|admin)(\?|\/|$)/;
+// Excluye /panel/nuevo explicitamente: es el propio formulario, no el
+// destino tras un registro exitoso (/panel/{id}?creado=1).
+export const BUSINESS_SETTLED = /\/panel\/(?!nuevo)[^/?]+/;
+
+// ---------- datos ----------
+
+export async function deleteUser(email: string) {
+  await db.user.deleteMany({ where: { email: email.toLowerCase() } });
+}
+
+export async function ensureUser(email: string, password = VALID_PASSWORD) {
+  const passwordHash = await hashPassword(password);
+  const user = await db.user.upsert({
+    where: { email: email.toLowerCase() },
+    update: { passwordHash, role: "EMPRENDEDOR" },
+    create: {
+      email: email.toLowerCase(),
+      passwordHash,
+      firstName: "Ana",
+      lastName: "Pérez",
+      role: "EMPRENDEDOR",
+    },
+    select: { id: true },
+  });
+  return user.id;
+}
+
+export async function countUsers(email: string): Promise<number> {
+  return db.user.count({ where: { email: email.toLowerCase() } });
+}
+
+// ---------- formularios ----------
+
+export async function fillRegisterForm(
+  page: Page,
+  fields: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    password?: string;
+  },
+) {
+  await page.goto("/registro");
+  await page.locator("#register-firstName").fill(fields.firstName ?? "Ana");
+  await page.locator("#register-lastName").fill(fields.lastName ?? "Pérez");
+  await page.locator("#register-email").fill(fields.email ?? "");
+  await page.locator("#register-password").fill(fields.password ?? "");
+}
+
+export async function loginThroughUi(
+  page: Page,
+  email: string,
+  password: string,
+) {
+  await page.goto("/login");
+  await page.locator("#login-email").fill(email);
+  await page.locator("#login-password").fill(password);
+  await page.getByRole("button", { name: /iniciar sesión/i }).click();
+  await waitForFormOutcome(page, AUTH_SETTLED);
+}
+
+export async function fillBusinessForm(
+  page: Page,
+  fields: {
+    name?: string;
+    description?: string;
+    category?: string;
+    contactInfo?: string;
+  },
+) {
+  await page.goto("/panel/nuevo");
+  await page.locator("#business-name").fill(fields.name ?? "");
+  await page.locator("#business-description").fill(fields.description ?? "");
+  await page
+    .locator("#business-category")
+    .selectOption(fields.category ?? "");
+  await page
+    .locator("#business-contactInfo")
+    .fill(fields.contactInfo ?? "300 000 0000");
+}

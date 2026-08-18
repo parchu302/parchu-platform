@@ -5,17 +5,7 @@ import { z } from "zod";
 import { readField } from "@/lib/form-data";
 import { sellerLeadSchema } from "@/lib/validations/lead";
 import { createSellerLead } from "@/repositories/lead-repository";
-
-export type SellerLeadState = {
-  status: "idle" | "success" | "error";
-  message: string;
-  errors?: Record<string, string[] | undefined>;
-};
-
-export const initialSellerLeadState: SellerLeadState = {
-  status: "idle",
-  message: "",
-};
+import { type SellerLeadState } from "./types";
 
 // Accion publica a proposito (captacion de leads del landing). Las Server
 // Actions son alcanzables por POST directo, no solo desde la UI, asi que

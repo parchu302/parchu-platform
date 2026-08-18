@@ -2,10 +2,8 @@
 
 import { useActionState } from "react";
 
-import {
-  initialSellerLeadState,
-  submitSellerLead,
-} from "@/actions/leads/create-seller-lead";
+import { submitSellerLead } from "@/actions/leads/create-seller-lead";
+import { initialSellerLeadState } from "@/actions/leads/types";
 
 const FIELD_CLASS =
   "w-full rounded border-none bg-[#3a2f24] px-3.5 py-3 text-[14.5px] text-paper placeholder:text-paper/45";

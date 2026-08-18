@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import {
-  initialSellerLeadState,
-  submitSellerLead,
-} from "@/actions/leads/create-seller-lead";
+import { submitSellerLead } from "@/actions/leads/create-seller-lead";
+import { initialSellerLeadState } from "@/actions/leads/types";
 import { db } from "@/lib/db";
 
 const MARKER = "test-fase-0";

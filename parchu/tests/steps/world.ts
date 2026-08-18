@@ -1,16 +1,30 @@
 import { test as base, createBdd } from "playwright-bdd";
 
+export type FormKind = "auth" | "business";
+
 export type TestState = {
   email: string;
   password: string;
   accountsBefore: number;
+  // Que formulario se esta usando: hay pasos con texto identico en los
+  // escenarios de registro de usuario y de registro de emprendimiento.
+  formKind: FormKind;
+  businessName: string;
+  businessId: string;
+  businessesBefore: number;
 };
 
-// Estado compartido entre los pasos de un mismo escenario (que correo se uso,
-// cuantas cuentas habia antes del intento).
 export const test = base.extend<{ state: TestState }>({
   state: async ({}, use) => {
-    await use({ email: "", password: "", accountsBefore: 0 });
+    await use({
+      email: "",
+      password: "",
+      accountsBefore: 0,
+      formKind: "auth",
+      businessName: "",
+      businessId: "",
+      businessesBefore: 0,
+    });
   },
 });
 
