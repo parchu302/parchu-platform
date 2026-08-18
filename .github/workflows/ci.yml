@@ -29,9 +29,7 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://parchu:parchu_ci@localhost:5433/parchu?schema=public
-      # Placeholders solo para CI: los secretos reales viven en el entorno de deploy.
-      SESSION_SECRET: ci-placeholder-no-es-un-secreto-real
-      CONFIRMATION_CODE_SECRET: ci-placeholder-no-es-un-secreto-real
+      ADMIN_EMAIL: admin@parchu.ci
 
     steps:
       - uses: actions/checkout@v4
@@ -44,11 +42,22 @@ jobs:
 
       - run: npm ci
 
+      # Secretos efímeros, generados por ejecución: nunca versionados.
+      # SESSION_SECRET debe ser una clave de 32 bytes en base64.
+      - name: Generar secretos efímeros de CI
+        run: |
+          echo "SESSION_SECRET=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+          echo "CONFIRMATION_CODE_SECRET=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+          echo "ADMIN_PASSWORD=$(openssl rand -base64 18)Aa1" >> "$GITHUB_ENV"
+
       - name: Validar schema de Prisma
         run: npx prisma validate
 
       - name: Aplicar migraciones
         run: npx prisma migrate deploy
+
+      - name: Sembrar administrador
+        run: npm run db:seed
 
       - name: Lint
         run: npm run lint
@@ -61,3 +70,17 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Instalar navegador de Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Pruebas E2E (escenarios Gherkin)
+        run: npm run test:e2e
+
+      - name: Publicar reporte de Playwright
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: parchu/playwright-report/
+          retention-days: 7

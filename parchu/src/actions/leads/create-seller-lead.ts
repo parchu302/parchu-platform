@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 
+import { readField } from "@/lib/form-data";
 import { sellerLeadSchema } from "@/lib/validations/lead";
 import { createSellerLead } from "@/repositories/lead-repository";
 
@@ -15,12 +16,6 @@ export const initialSellerLeadState: SellerLeadState = {
   status: "idle",
   message: "",
 };
-
-// FormData.get puede devolver File o null; normalizamos a string.
-function readField(formData: FormData, key: string): string {
-  const value = formData.get(key);
-  return typeof value === "string" ? value : "";
-}
 
 // Accion publica a proposito (captacion de leads del landing). Las Server
 // Actions son alcanzables por POST directo, no solo desde la UI, asi que

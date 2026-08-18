@@ -12,7 +12,17 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Specs generados por playwright-bdd a partir de los .feature.
+    ".features-gen/**",
   ]),
+  {
+    // Los fixtures de Playwright reciben un parametro llamado `use`, que la
+    // regla de hooks de React confunde con el hook `use` de React.
+    files: ["tests/**/*.ts"],
+    rules: {
+      "react-hooks/rules-of-hooks": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;
