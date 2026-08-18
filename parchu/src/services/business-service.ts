@@ -150,8 +150,31 @@ export async function deleteBusiness(
   return { ok: true, business: deleted };
 }
 
-// La regla de "emprendimiento aprobado" que la Fase 3 reutiliza para bloquear
-// el registro de productos y formas de pago.
 export function isApproved(business: Business): boolean {
   return business.status === "APROBADO" && business.deletedAt === null;
+}
+
+export type ApprovedBusinessOutcome =
+  | { ok: true; business: Business }
+  | { ok: false; reason: "NOT_FOUND" | "NOT_APPROVED" };
+
+// Precondicion compartida por productos y formas de pago: el emprendimiento
+// debe existir, ser del emprendedor y estar aprobado. Vive aqui para que la
+// regla no se duplique en cada servicio que la necesita.
+export async function requireApprovedBusiness(
+  businessId: string,
+  ownerId: string,
+): Promise<ApprovedBusinessOutcome> {
+  const business = await findBusinessById(businessId);
+
+  // Mismo resultado para "no existe" y "es de otro emprendedor".
+  if (!business || business.ownerId !== ownerId) {
+    return { ok: false, reason: "NOT_FOUND" };
+  }
+
+  if (!isApproved(business)) {
+    return { ok: false, reason: "NOT_APPROVED" };
+  }
+
+  return { ok: true, business };
 }

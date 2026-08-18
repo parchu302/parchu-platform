@@ -274,10 +274,6 @@ Then("lo asocia a la cuenta del emprendedor", async ({ state }) => {
   expect(business?.owner.email).toBe(EMPRENDEDOR_EMAIL);
 });
 
-Then("muestra un mensaje de confirmación al emprendedor", async ({ page }) => {
-  await expect(page.getByTestId("business-created")).toBeVisible();
-});
-
 Then("el emprendimiento no se crea", async ({ page, state }) => {
   await expect(page).toHaveURL(/\/panel\/nuevo$/);
 

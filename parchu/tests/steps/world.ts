@@ -1,6 +1,6 @@
 import { test as base, createBdd } from "playwright-bdd";
 
-export type FormKind = "auth" | "business";
+export type FormKind = "auth" | "business" | "product" | "payment";
 
 export type TestState = {
   email: string;

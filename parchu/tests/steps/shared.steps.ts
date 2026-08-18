@@ -5,22 +5,36 @@ import {
   BUSINESS_SETTLED,
   waitForFormOutcome,
 } from "./helpers";
-import { Then, When } from "./world";
+import { type FormKind, Then, When } from "./world";
 
-// Estos dos pasos tienen texto identico en los escenarios de registro de
-// usuario (0.1) y de registro de emprendimiento (1). Se resuelven segun el
-// formulario activo, para no tener que alterar el Gherkin original.
+// Varios pasos tienen texto identico en los escenarios de registro de cuenta
+// (0.1), de emprendimiento (1) y de producto (2). En vez de alterar el Gherkin
+// original, se resuelven segun el formulario activo.
 
-const REQUIRED_FIELD_ERROR: Record<string, { selector: string; text: string }> =
-  {
-    // Formulario de cuenta (0.1)
-    correo: { selector: "#register-email-error", text: "El correo es obligatorio" },
+type FieldSpec = { selector: string; text: string };
+
+const REQUIRED_FIELD_ERROR: Partial<
+  Record<FormKind, Record<string, FieldSpec>>
+> = {
+  auth: {
+    correo: {
+      selector: "#register-email-error",
+      text: "El correo es obligatorio",
+    },
     contraseña: {
       selector: "#register-password-error",
       text: "La contraseña es obligatoria",
     },
-    // Formulario de emprendimiento (1)
-    nombre: { selector: "", text: "El nombre es obligatorio" },
+    nombre: {
+      selector: "#register-firstName-error",
+      text: "El nombre es obligatorio",
+    },
+  },
+  business: {
+    nombre: {
+      selector: "#business-name-error",
+      text: "El nombre es obligatorio",
+    },
     descripción: {
       selector: "#business-description-error",
       text: "La descripción es obligatoria",
@@ -29,7 +43,26 @@ const REQUIRED_FIELD_ERROR: Record<string, { selector: string; text: string }> =
       selector: "#business-category-error",
       text: "La categoría es obligatoria",
     },
-  };
+  },
+  product: {
+    nombre: {
+      selector: "#product-name-error",
+      text: "El nombre es obligatorio",
+    },
+    precio: {
+      selector: "#product-price-error",
+      text: "El precio es obligatorio",
+    },
+    categoría: {
+      selector: "#product-category-error",
+      text: "La categoría es obligatoria",
+    },
+    stock: {
+      selector: "#product-stock-error",
+      text: "El stock es obligatorio",
+    },
+  },
+};
 
 When("confirma el registro", async ({ page, state }) => {
   if (state.formKind === "business") {
@@ -47,17 +80,24 @@ When("confirma el registro", async ({ page, state }) => {
 Then(
   "el sistema muestra un error indicando que el campo {string} es obligatorio",
   async ({ page, state }, campo: string) => {
-    const entry = REQUIRED_FIELD_ERROR[campo];
-    expect(entry, `campo desconocido: ${campo}`).toBeTruthy();
+    const spec = REQUIRED_FIELD_ERROR[state.formKind]?.[campo];
+    expect(
+      spec,
+      `campo "${campo}" no mapeado para el formulario "${state.formKind}"`,
+    ).toBeTruthy();
 
-    // "nombre" existe en ambos formularios: depende del contexto.
-    const selector =
-      campo === "nombre"
-        ? state.formKind === "business"
-          ? "#business-name-error"
-          : "#register-firstName-error"
-        : entry!.selector;
-
-    await expect(page.locator(selector)).toHaveText(entry!.text);
+    await expect(page.locator(spec!.selector)).toHaveText(spec!.text);
   },
 );
+
+Then("muestra un mensaje de confirmación al emprendedor", async ({
+  page,
+  state,
+}) => {
+  if (state.formKind === "business") {
+    await expect(page.getByTestId("business-created")).toBeVisible();
+    return;
+  }
+
+  await expect(page.getByTestId("catalog-message")).toBeVisible();
+});

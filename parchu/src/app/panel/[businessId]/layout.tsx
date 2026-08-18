@@ -65,6 +65,22 @@ export default async function BusinessLayout({
         </nav>
       ) : null}
 
+      <nav aria-label="Secciones del emprendimiento" className="mb-8 flex flex-wrap gap-2">
+        {[
+          { href: `/panel/${business.id}`, label: "Resumen" },
+          { href: `/panel/${business.id}/productos`, label: "Productos" },
+          { href: `/panel/${business.id}/pagos`, label: "Formas de pago" },
+        ].map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="rounded border-2 border-ink bg-paper px-4 py-2 font-mono text-[12.5px] font-semibold no-underline"
+          >
+            {item.label}
+          </Link>
+        ))}
+      </nav>
+
       {children}
     </main>
   );
