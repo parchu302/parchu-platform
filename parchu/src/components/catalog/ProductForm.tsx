@@ -4,7 +4,7 @@ import { useActionState } from "react";
 
 import { registerProductAction } from "@/actions/catalog/register-product";
 import { initialCatalogFormState } from "@/actions/catalog/types";
-import { BUSINESS_CATEGORIES } from "@/lib/categories";
+import { PRODUCT_CATEGORIES } from "@/lib/categories";
 
 import {
   CATALOG_FIELD_CLASS,
@@ -70,7 +70,7 @@ export function ProductForm({ businessId }: { businessId: string }) {
           className={CATALOG_FIELD_CLASS}
         >
           <option value="">Selecciona una categoría</option>
-          {BUSINESS_CATEGORIES.map((category) => (
+          {PRODUCT_CATEGORIES.map((category) => (
             <option key={category} value={category}>
               {category}
             </option>

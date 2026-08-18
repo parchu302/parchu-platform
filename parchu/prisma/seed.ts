@@ -155,7 +155,7 @@ const DEMO_PRODUCTS: {
     name: "Brownie",
     description: "Brownie de chocolate con nueces.",
     price: 6000,
-    category: "Comida",
+    category: "Postres",
     stock: 40,
     salesCount: 128,
   },
@@ -165,7 +165,7 @@ const DEMO_PRODUCTS: {
     name: "Galletas",
     description: "Paquete de seis galletas.",
     price: 8000,
-    category: "Comida",
+    category: "Postres",
     stock: 25,
     salesCount: 74,
   },
@@ -175,9 +175,19 @@ const DEMO_PRODUCTS: {
     name: "Cheesecake",
     description: "Porción individual.",
     price: 15000,
-    category: "Comida",
+    category: "Postres",
     stock: 12,
     salesCount: 31,
+  },
+  {
+    id: "seed_prod_malteada",
+    businessName: "Postres de Cami",
+    name: "Malteada de brownie",
+    description: "Malteada fría con trozos de brownie.",
+    price: 9000,
+    category: "Bebidas",
+    stock: 30,
+    salesCount: 42,
   },
   {
     id: "seed_prod_impresion",
@@ -242,6 +252,29 @@ const DEMO_PAYMENT_METHODS: {
   },
 ];
 
+// Categoría aislada con exactamente 45 productos: da 3 páginas exactas
+// (20 + 20 + 5) para poder verificar la paginación y el caso de página
+// inexistente de forma determinista, sin depender de conteos globales.
+const PAGINATION_CATEGORY = "Bazar del campus";
+const PAGINATION_PRODUCT_COUNT = 45;
+
+function paginationProducts(businessId: string) {
+  return Array.from({ length: PAGINATION_PRODUCT_COUNT }, (_, index) => {
+    const position = index + 1;
+    return {
+      id: `seed_bazar_${position}`,
+      businessId,
+      name: `Artículo de bazar ${String(position).padStart(2, "0")}`,
+      description: "Producto de muestra para el catálogo.",
+      price: 1000 * position,
+      category: PAGINATION_CATEGORY,
+      stock: 50,
+      // Descendente: el orden por más vendidos queda determinista.
+      salesCount: PAGINATION_PRODUCT_COUNT - index,
+    };
+  });
+}
+
 async function seedCatalog() {
   const businessIdByName = new Map<string, string>();
   for (const business of await prisma.business.findMany({
@@ -256,7 +289,17 @@ async function seedCatalog() {
 
     await prisma.product.upsert({
       where: { id: product.id },
-      update: { price: product.price, stock: product.stock, salesCount: product.salesCount },
+      // Se actualizan todos los campos declarados: el seed debe converger al
+      // estado descrito arriba, no solo crear filas la primera vez.
+      update: {
+        name: product.name,
+        description: product.description,
+        price: product.price,
+        category: product.category,
+        stock: product.stock,
+        salesCount: product.salesCount,
+        status: "PUBLICADO",
+      },
       create: {
         id: product.id,
         businessId,
@@ -286,6 +329,17 @@ async function seedCatalog() {
     });
   }
 
+  const bazarBusinessId = businessIdByName.get("Impresiones JD");
+  if (bazarBusinessId) {
+    for (const product of paginationProducts(bazarBusinessId)) {
+      await prisma.product.upsert({
+        where: { id: product.id },
+        update: { ...product, status: "PUBLICADO" },
+        create: product,
+      });
+    }
+  }
+
   const visibles = await prisma.product.count({
     where: {
       status: "PUBLICADO",
@@ -294,8 +348,10 @@ async function seedCatalog() {
   });
 
   console.log(
-    `seed: ${DEMO_PRODUCTS.length} productos y ${DEMO_PAYMENT_METHODS.length} formas de pago ` +
-      `(${visibles} productos visibles en el catálogo público).`,
+    `seed: ${DEMO_PRODUCTS.length + PAGINATION_PRODUCT_COUNT} productos y ` +
+      `${DEMO_PAYMENT_METHODS.length} formas de pago ` +
+      `(${visibles} visibles en el catálogo público, ` +
+      `${PAGINATION_PRODUCT_COUNT} de ellos en "${PAGINATION_CATEGORY}").`,
   );
 }
 

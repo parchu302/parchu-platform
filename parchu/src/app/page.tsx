@@ -1,5 +1,11 @@
 import { SellerLeadForm } from "@/components/landing/SellerLeadForm";
-import { VendorBoard } from "@/components/landing/VendorBoard";
+import { FeaturedBoard } from "@/components/landing/FeaturedBoard";
+
+// El tablero destacado se lee de la base de datos: sin esto la pagina se
+// prerenderiza en el build y congelaria esos productos para siempre.
+// Es la vista de mayor trafico, asi que se sirve estatica y se regenera cada
+// 5 minutos en vez de consultar en cada request.
+export const revalidate = 300;
 
 const WRAP = "mx-auto w-full max-w-[1100px] px-6";
 const SECTION_LABEL =
@@ -41,7 +47,8 @@ export default function LandingPage() {
           <nav>
             {[
               { href: "#como", label: "Cómo funciona" },
-              { href: "#tablero", label: "El tablero" },
+              { href: "/productos", label: "El tablero" },
+              { href: "/login", label: "Entrar" },
               { href: "#unirme", label: "Sumarme" },
             ].map((link) => (
               <a
@@ -74,7 +81,7 @@ export default function LandingPage() {
           <a href="#unirme" className={BTN + " bg-ink text-paper"}>
             Quiero vender aquí
           </a>
-          <a href="#tablero" className={BTN + " bg-transparent text-ink"}>
+          <a href="/productos" className={BTN + " bg-transparent text-ink"}>
             Ver qué se está vendiendo
           </a>
           <a
@@ -112,7 +119,7 @@ export default function LandingPage() {
         <h2 className={SECTION_TITLE}>
           Esto es lo que ya se está vendiendo en el campus.
         </h2>
-        <VendorBoard />
+        <FeaturedBoard />
       </section>
 
       <section className={WRAP + " py-16"}>
