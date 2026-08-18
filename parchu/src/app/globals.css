@@ -1,0 +1,15 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  /* Trama de puntos del landing original. */
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    rgba(43, 33, 24, 0.06) 1px,
+    transparent 0
+  );
+  background-size: 22px 22px;
+}

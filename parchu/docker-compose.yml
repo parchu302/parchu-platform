@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: parchu-db-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-parchu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-parchu_local_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-parchu}
+    # 5433 en el host: 5432 y 55432 ya estan ocupados por otros proyectos locales.
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - parchu_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-parchu} -d ${POSTGRES_DB:-parchu}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  parchu_pgdata:

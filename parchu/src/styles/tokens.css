@@ -1,0 +1,22 @@
+/* Tokens de marca ParchU, extraidos del landing original.
+   Tailwind v4 es CSS-first: estos tokens generan las utilidades
+   (bg-paper, text-ink, font-display, ...). No existe tailwind.config.ts. */
+
+/* Valores literales -> @theme (Tailwind los resuelve en build). */
+@theme {
+  --color-paper: #efe7d8;
+  --color-paper-2: #e7dcc5;
+  --color-ink: #2b2118;
+  --color-mustard: #e3a72a;
+  --color-teal: #1f6f6b;
+  --color-coral: #e2574c;
+  --color-line: rgba(43, 33, 24, 0.18);
+}
+
+/* Referencias a variables inyectadas por next/font -> @theme inline,
+   para que Tailwind emita el var(...) tal cual en vez de resolverlo. */
+@theme inline {
+  --font-display: var(--font-archivo-black);
+  --font-sans: var(--font-work-sans);
+  --font-mono: var(--font-jetbrains-mono);
+}

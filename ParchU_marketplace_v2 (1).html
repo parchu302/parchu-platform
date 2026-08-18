@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ParchU — Todo lo que se vende en tu universidad</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Work+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EFE7D8;
+    --paper-2:#E7DCC5;
+    --ink:#2B2118;
+    --mustard:#E3A72A;
+    --teal:#1F6F6B;
+    --coral:#E2574C;
+    --line:rgba(43,33,24,.18);
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--paper);
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(43,33,24,.06) 1px, transparent 0);
+    background-size:22px 22px;
+    color:var(--ink);
+    font-family:'Work Sans', sans-serif;
+    line-height:1.5;
+  }
+  a{color:inherit;}
+  .wrap{max-width:1100px;margin:0 auto;padding:0 24px;}
+
+  /* HEADER */
+  header{
+    padding:22px 0 0;
+  }
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding-bottom:18px;border-bottom:2px dashed var(--line);}
+  .brand{display:flex;align-items:center;gap:10px;font-family:'Archivo Black',sans-serif;font-size:22px;letter-spacing:.5px;}
+  .brand .pin{width:12px;height:12px;background:var(--coral);border-radius:50%;box-shadow:0 2px 3px rgba(0,0,0,.25);}
+  nav a{margin-left:26px;text-decoration:none;font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:.06em;border-bottom:2px solid transparent;padding-bottom:4px;}
+  nav a:hover{border-color:var(--mustard);}
+
+  /* HERO */
+  .hero{padding:70px 0 60px;position:relative;}
+  .hero-tag{
+    display:inline-block;background:var(--mustard);color:var(--ink);
+    font-family:'JetBrains Mono',monospace;font-weight:700;font-size:12.5px;
+    padding:6px 12px;transform:rotate(-2deg);letter-spacing:.03em;
+    box-shadow:2px 3px 0 rgba(43,33,24,.2);
+  }
+  h1.headline{
+    font-family:'Archivo Black',sans-serif;
+    font-size:clamp(38px,6vw,68px);
+    line-height:1.02;
+    margin:22px 0 18px;
+    max-width:780px;
+  }
+  h1.headline .hi{color:var(--coral);}
+  .hero p.sub{font-size:19px;max-width:560px;margin:0 0 34px;color:rgba(43,33,24,.85);}
+  .cta-row{display:flex;gap:16px;flex-wrap:wrap;}
+  .btn{
+    font-family:'Work Sans',sans-serif;font-weight:700;font-size:15.5px;
+    padding:15px 26px;border-radius:3px;text-decoration:none;display:inline-block;
+    border:2px solid var(--ink);cursor:pointer;transition:transform .15s ease;
+  }
+  .btn:hover{transform:translateY(-2px);}
+  .btn-primary{background:var(--ink);color:var(--paper);}
+  .btn-ghost{background:transparent;color:var(--ink);}
+
+  .corner-tape{
+    position:absolute;top:28px;right:24px;width:120px;height:34px;
+    background:repeating-linear-gradient(45deg, rgba(31,111,107,.35) 0 6px, rgba(31,111,107,.2) 6px 12px);
+    transform:rotate(6deg);opacity:.7;display:none;
+  }
+  @media(min-width:820px){.corner-tape{display:block;}}
+
+  /* SECTION LABELS */
+  .section{padding:64px 0;}
+  .section-label{
+    font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;
+    text-transform:uppercase;letter-spacing:.12em;color:var(--teal);
+    margin-bottom:10px;
+  }
+  h2.section-title{font-family:'Archivo Black',sans-serif;font-size:clamp(26px,4vw,38px);margin:0 0 40px;max-width:640px;}
+
+  /* HOW IT WORKS */
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:24px;}
+  .step{background:var(--paper-2);border:2px solid var(--ink);padding:24px;border-radius:4px;position:relative;}
+  .step .num{
+    font-family:'Archivo Black',sans-serif;font-size:38px;color:var(--coral);line-height:1;margin-bottom:10px;
+  }
+  .step h3{margin:0 0 8px;font-size:18px;}
+  .step p{margin:0;font-size:14.5px;color:rgba(43,33,24,.8);}
+
+  /* CATEGORIES */
+  .cats{display:flex;gap:12px;flex-wrap:wrap;}
+  .cat-chip{
+    font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;
+    padding:9px 16px;border:2px solid var(--ink);border-radius:20px;background:var(--paper);
+    cursor:default;
+  }
+  .cat-chip.on{background:var(--teal);color:var(--paper);border-color:var(--teal);}
+
+  /* VENDOR BOARD */
+  .board{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:26px;margin-top:44px;
+  }
+  .note{
+    background:#FAF6EC;
+    border:1.5px solid var(--line);
+    padding:20px 18px 22px;
+    box-shadow:3px 5px 10px rgba(43,33,24,.15);
+    position:relative;
+  }
+  .note:nth-child(odd){transform:rotate(-1.4deg);}
+  .note:nth-child(even){transform:rotate(1.2deg);}
+  .note::before{
+    content:'';position:absolute;top:-8px;left:50%;transform:translateX(-50%) rotate(-3deg);
+    width:46px;height:16px;background:rgba(227,167,42,.75);
+  }
+  .note .cat{font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--teal);font-weight:700;}
+  .note h4{margin:8px 0 6px;font-size:17px;font-family:'Archivo Black',sans-serif;}
+  .note p{margin:0 0 14px;font-size:13.5px;color:rgba(43,33,24,.78);}
+  .note .price{
+    display:inline-block;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:13.5px;
+    background:var(--coral);color:#fff;padding:4px 10px;transform:rotate(-2deg);
+  }
+
+
+  .vendor-card{cursor:pointer;transition:transform .15s ease, box-shadow .15s ease;}
+  .vendor-card:hover{transform:translateY(-5px) rotate(0deg);box-shadow:5px 8px 16px rgba(43,33,24,.18);}
+  .view-btn{
+    display:block;margin-top:16px;border:0;background:transparent;padding:0;
+    color:var(--teal);font-family:'JetBrains Mono',monospace;font-weight:700;
+    font-size:12px;cursor:pointer;
+  }
+  .cat-chip{cursor:pointer;}
+  .cat-chip:hover{background:var(--paper-2);}
+  .vendor-modal{
+    position:fixed;inset:0;background:rgba(43,33,24,.72);display:none;
+    align-items:center;justify-content:center;padding:20px;z-index:1000;
+  }
+  .vendor-modal.open{display:flex;}
+  .vendor-panel{
+    width:min(720px,100%);max-height:90vh;overflow:auto;background:var(--paper);
+    border:3px solid var(--ink);border-radius:8px;padding:30px;position:relative;
+    box-shadow:8px 10px 0 rgba(43,33,24,.25);
+  }
+  .close-modal{
+    position:absolute;top:12px;right:14px;border:2px solid var(--ink);
+    background:var(--paper);font-size:20px;font-weight:700;width:38px;height:38px;
+    cursor:pointer;border-radius:4px;
+  }
+  .vendor-head{border-bottom:2px dashed var(--line);padding-bottom:18px;margin-bottom:20px;}
+  .vendor-head h2{font-family:'Archivo Black',sans-serif;font-size:34px;margin:5px 0;}
+  .vendor-products{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin:20px 0;}
+  .product-item{background:#FAF6EC;border:1.5px solid var(--line);padding:16px;border-radius:5px;}
+  .product-item strong{display:block;font-size:16px;margin-bottom:5px;}
+  .product-price{font-family:'JetBrains Mono',monospace;color:var(--coral);font-weight:700;}
+  .wa-btn{
+    display:inline-block;background:#1F6F6B;color:#fff;text-decoration:none;
+    padding:14px 20px;border:2px solid var(--ink);font-weight:700;border-radius:4px;
+  }
+  .modal-note{font-size:13px;color:rgba(43,33,24,.68);margin-top:14px;}
+
+  /* JOIN FORM */
+  .join{
+    background:var(--ink);color:var(--paper);border-radius:8px;padding:52px 40px;
+  }
+  .join h2{font-family:'Archivo Black',sans-serif;font-size:clamp(24px,3.6vw,34px);margin:0 0 10px;color:var(--paper);}
+  .join p.lead{color:rgba(239,231,216,.75);margin:0 0 32px;max-width:520px;}
+  form{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:640px;}
+  form .full{grid-column:1/-1;}
+  label{display:block;font-size:12.5px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;color:var(--mustard);font-weight:700;}
+  input,select{
+    width:100%;padding:12px 14px;border-radius:4px;border:none;background:#3a2f24;color:var(--paper);
+    font-family:'Work Sans',sans-serif;font-size:14.5px;
+  }
+  input::placeholder{color:rgba(239,231,216,.45);}
+  .join .btn{margin-top:8px;background:var(--mustard);color:var(--ink);border-color:var(--mustard);}
+  #confirm{display:none;margin-top:18px;font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--mustard);}
+
+  /* MODEL EXPLAIN */
+  .model-box{display:flex;gap:32px;flex-wrap:wrap;align-items:flex-start;}
+  .model-box .lead-text{flex:1;min-width:260px;}
+  .model-box .fee-badge{
+    background:var(--teal);color:#fff;padding:30px 34px;border-radius:8px;text-align:center;min-width:220px;
+    transform:rotate(-1deg);
+  }
+  .fee-badge .big{font-family:'Archivo Black',sans-serif;font-size:44px;display:block;}
+  .fee-badge .small{font-family:'JetBrains Mono',monospace;font-size:12.5px;letter-spacing:.05em;}
+
+  footer{border-top:2px dashed var(--line);padding:34px 0;font-size:13px;color:rgba(43,33,24,.65);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;}
+
+  @media(max-width:640px){
+    form{grid-template-columns:1fr;}
+    .cta-row{flex-direction:column;}
+    .btn{text-align:center;}
+  }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <div class="topbar">
+    <div class="brand"><span class="pin"></span>ParchU</div>
+    <nav>
+      <a href="#como">Cómo funciona</a>
+      <a href="#tablero">El tablero</a>
+      <a href="#unirme">Sumarme</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero wrap">
+  <div class="corner-tape"></div>
+  <span class="hero-tag">📌 hecho por y para tu universidad</span>
+  <h1 class="headline">Todo lo que se vende en <span class="hi">tu campus</span>, en un solo corcho.</h1>
+  <p class="sub">Comida, ropa, tecnología, servicios, diseño, tutorías express — ParchU reúne a todos los que venden algo en tu universidad para que te encuentren más fácil y vendas más.</p>
+  <div class="cta-row">
+    <a href="#unirme" class="btn btn-primary">Quiero vender aquí</a>
+    <a href="#tablero" class="btn btn-ghost">Ver qué se está vendiendo</a>
+    <a href="https://wa.me/573178727517?text=Hola%2C%20quiero%20vender%20en%20ParchU.%20Vendo%3A%20" target="_blank" class="btn btn-ghost">💬 Escríbenos por WhatsApp</a>
+  </div>
+</section>
+
+<section class="section wrap" id="como">
+  <div class="section-label">Cómo funciona</div>
+  <h2 class="section-title">Tres pasos y ya estás en el tablero.</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="num">01</div>
+      <h3>Te registras</h3>
+      <p>Cuéntanos qué vendes, tus precios y cómo te contactan. Sin costo por entrar.</p>
+    </div>
+    <div class="step">
+      <div class="num">02</div>
+      <h3>Apareces en el tablero</h3>
+      <p>Tu producto queda visible para todos los estudiantes que buscan qué comprar en el campus.</p>
+    </div>
+    <div class="step">
+      <div class="num">03</div>
+      <h3>Vendes y pagas una comisión</h3>
+      <p>Solo pagas un pequeño % cuando la venta se concreta gracias a ParchU. Si no vendes, no pagas.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section wrap" id="tablero">
+  <div class="section-label">El tablero</div>
+  <h2 class="section-title">Esto es lo que ya se está vendiendo en el campus.</h2>
+
+  <div class="cats">
+    <span class="cat-chip on">Todos</span>
+    <span class="cat-chip">Comida</span>
+    <span class="cat-chip">Ropa &amp; accesorios</span>
+    <span class="cat-chip">Tecnología</span>
+    <span class="cat-chip">Diseño &amp; impresiones</span>
+    <span class="cat-chip">Tutorías</span>
+    <span class="cat-chip">Belleza</span>
+  </div>
+
+  <div class="board" id="vendorBoard">
+      <article class="note vendor-card" data-category="Comida" onclick="openVendor('cami')">
+        <div class="cat">Comida</div>
+        <h4>Postres de Cami</h4>
+        <p>Brownies, galletas y postres por encargo. Entrega en el campus.</p>
+        <span class="price">desde $6.000</span>
+        <button class="view-btn" onclick="event.stopPropagation();openVendor('cami')">Ver emprendimiento →</button>
+      </article>
+
+      <article class="note vendor-card" data-category="Tecnología" onclick="openVendor('reparacel')">
+        <div class="cat">Tecnología</div>
+        <h4>ReparaCel U</h4>
+        <p>Cambio de pantalla, baterías y accesorios para celulares.</p>
+        <span class="price">desde $40.000</span>
+        <button class="view-btn" onclick="event.stopPropagation();openVendor('reparacel')">Ver emprendimiento →</button>
+      </article>
+
+      <article class="note vendor-card" data-category="Diseño & impresiones" onclick="openVendor('impresiones')">
+        <div class="cat">Diseño &amp; impresiones</div>
+        <h4>Impresiones JD</h4>
+        <p>Anillados, impresiones a color y diseño de portadas.</p>
+        <span class="price">desde $2.000</span>
+        <button class="view-btn" onclick="event.stopPropagation();openVendor('impresiones')">Ver emprendimiento →</button>
+      </article>
+
+      <article class="note vendor-card" data-category="Ropa & accesorios" onclick="openVendor('vintage')">
+        <div class="cat">Ropa &amp; accesorios</div>
+        <h4>Vintage del Bloque 4</h4>
+        <p>Ropa de segunda seleccionada y catálogo renovado.</p>
+        <span class="price">desde $15.000</span>
+        <button class="view-btn" onclick="event.stopPropagation();openVendor('vintage')">Ver emprendimiento →</button>
+      </article>
+
+      <article class="note vendor-card" data-category="Belleza" onclick="openVendor('unas')">
+        <div class="cat">Belleza</div>
+        <h4>Uñas por Vale</h4>
+        <p>Manicure express en tu residencia o punto de encuentro.</p>
+        <span class="price">desde $18.000</span>
+        <button class="view-btn" onclick="event.stopPropagation();openVendor('unas')">Ver emprendimiento →</button>
+      </article>
+
+      <article class="note vendor-card" data-category="Tutorías" onclick="openVendor('calculo')">
+        <div class="cat">Tutorías</div>
+        <h4>Cálculo con Db</h4>
+        <p>Asesorías express antes de parcial, presencial o virtual.</p>
+        <span class="price">desde $20.000/h</span>
+        <button class="view-btn" onclick="event.stopPropagation();openVendor('calculo')">Ver emprendimiento →</button>
+      </article>
+    </div>
+  </section>
+
+  <section class="section wrap">
+    <div class="model-box">>
+
+<section class="section wrap">
+  <div class="model-box">
+    <div class="lead-text">
+      <div class="section-label">Cómo ganamos todos</div>
+      <h2 class="section-title" style="margin-bottom:14px;">Nadie paga por estar. Solo compartimos lo que se vende gracias al tablero.</h2>
+      <p style="max-width:480px;color:rgba(43,33,24,.8);">Cero cuota de entrada, cero letra pequeña. ParchU solo gana cuando tú ganas.</p>
+    </div>
+    <div class="fee-badge">
+      <span class="big">8%</span>
+      <span class="small">SOLO SOBRE VENTAS CONCRETADAS</span>
+    </div>
+  </div>
+</section>
+
+<section class="section wrap" id="unirme">
+  <div class="join">
+    <h2>Súmate al tablero</h2>
+    <p class="lead">Déjanos tus datos y te contactamos para activar tu espacio esta misma semana, o escríbenos directo por WhatsApp.</p>
+    <form action="https://formspree.io/f/yeidispico.2025@gmail.com" method="POST">
+      <input type="hidden" name="_subject" value="Nuevo vendedor en ParchU">
+      <div>
+        <label>Nombre</label>
+        <input type="text" name="Nombre" placeholder="Tu nombre" required>
+      </div>
+      <div>
+        <label>WhatsApp</label>
+        <input type="tel" name="WhatsApp" placeholder="300 000 0000" required>
+      </div>
+      <div class="full">
+        <label>¿Qué vendes?</label>
+        <input type="text" name="Qué vende" placeholder="Ej: postres, tutorías de física, ropa..." required>
+      </div>
+      <div class="full">
+        <button type="submit" class="btn">Enviar y unirme</button>
+      </div>
+    </form>
+    <p style="margin-top:18px;font-size:13.5px;color:rgba(239,231,216,.65);">¿Prefieres algo más directo? <a href="https://wa.me/573178727517?text=Hola%2C%20quiero%20vender%20en%20ParchU.%20Vendo%3A%20" target="_blank" style="color:var(--mustard);text-decoration:underline;">Escríbenos por WhatsApp</a></p>
+  </div>
+</section>
+
+
+<div class="vendor-modal" id="vendorModal" role="dialog" aria-modal="true" aria-labelledby="vendorTitle">
+  <div class="vendor-panel">
+    <button class="close-modal" onclick="closeVendor()" aria-label="Cerrar">×</button>
+    <div class="vendor-head">
+      <div class="section-label" id="vendorCategory"></div>
+      <h2 id="vendorTitle"></h2>
+      <p id="vendorDescription"></p>
+    </div>
+    <h3>Productos</h3>
+    <div class="vendor-products" id="vendorProducts"></div>
+    <a class="wa-btn" id="vendorWhatsapp" href="#" target="_blank" rel="noopener">💬 Pedir por WhatsApp</a>
+    <p class="modal-note">La compra se coordina directamente con el emprendimiento. ParchU conecta al cliente con el vendedor.</p>
+  </div>
+</div>
+
+<footer class="wrap">
+  <span>ParchU — un tablero para todo lo que se vende en el campus.</span>
+  <span>Modelo: 8% solo sobre ventas generadas por ParchU.</span>
+</footer>
+
+
+<script>
+const vendors = {
+  cami: {
+    category: "Comida",
+    name: "Postres de Cami",
+    description: "Brownies, galletas y postres por encargo. Entrega el mismo día en el campus.",
+    phone: "573178727517",
+    products: [
+      ["Brownie", "$6.000"],
+      ["Galletas", "$8.000"],
+      ["Cheesecake", "$15.000"]
+    ]
+  },
+  reparacel: {
+    category: "Tecnología",
+    name: "ReparaCel U",
+    description: "Reparación y accesorios para celulares.",
+    phone: "573178727517",
+    products: [["Cambio de pantalla", "Consultar"], ["Cambio de batería", "Consultar"], ["Accesorios", "Consultar"]]
+  },
+  impresiones: {
+    category: "Diseño & impresiones",
+    name: "Impresiones JD",
+    description: "Impresiones, anillados y diseño de trabajos.",
+    phone: "573178727517",
+    products: [["Impresión B/N", "$2.000"], ["Impresión a color", "Consultar"], ["Anillado", "Consultar"]]
+  },
+  vintage: {
+    category: "Ropa & accesorios",
+    name: "Vintage del Bloque 4",
+    description: "Ropa de segunda seleccionada.",
+    phone: "573178727517",
+    products: [["Prendas seleccionadas", "Desde $15.000"]]
+  },
+  unas: {
+    category: "Belleza",
+    name: "Uñas por Vale",
+    description: "Manicure express dentro o cerca del campus.",
+    phone: "573178727517",
+    products: [["Manicure", "$18.000"], ["Diseño de uñas", "Consultar"]]
+  },
+  calculo: {
+    category: "Tutorías",
+    name: "Cálculo con Db",
+    description: "Asesorías de cálculo antes de parciales, presenciales o virtuales.",
+    phone: "573178727517",
+    products: [["Tutoría de cálculo", "$20.000/h"]]
+  }
+};
+
+function openVendor(id){
+  const v = vendors[id];
+  if(!v) return;
+  document.getElementById("vendorCategory").textContent = v.category;
+  document.getElementById("vendorTitle").textContent = v.name;
+  document.getElementById("vendorDescription").textContent = v.description;
+
+  document.getElementById("vendorProducts").innerHTML = v.products.map(p =>
+    `<div class="product-item"><strong>${p[0]}</strong><span class="product-price">${p[1]}</span></div>`
+  ).join("");
+
+  const text = encodeURIComponent(`Hola, vi ${v.name} en ParchU y quiero hacer un pedido.`);
+  document.getElementById("vendorWhatsapp").href = `https://wa.me/${v.phone}?text=${text}`;
+  document.getElementById("vendorModal").classList.add("open");
+  document.body.style.overflow = "hidden";
+}
+
+function closeVendor(){
+  document.getElementById("vendorModal").classList.remove("open");
+  document.body.style.overflow = "";
+}
+
+document.getElementById("vendorModal").addEventListener("click", function(e){
+  if(e.target === this) closeVendor();
+});
+
+document.addEventListener("keydown", function(e){
+  if(e.key === "Escape") closeVendor();
+});
+
+document.querySelectorAll(".cat-chip").forEach(chip => {
+  chip.addEventListener("click", () => {
+    document.querySelectorAll(".cat-chip").forEach(c => c.classList.remove("on"));
+    chip.classList.add("on");
+    const selected = chip.textContent.trim();
+    document.querySelectorAll(".vendor-card").forEach(card => {
+      card.style.display = (selected === "Todos" || card.dataset.category === selected) ? "" : "none";
+    });
+  });
+});
+</script>
+
+</body>
+</html>

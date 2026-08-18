@@ -1,0 +1,180 @@
+// ParchU — modelo de datos (ver parchu-plan-implementacion.md §4).
+// Migracion baseline unica: el modelo esta cerrado, no se fragmenta por fase.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- enums ----------
+
+enum Role {
+  EMPRENDEDOR
+  ADMIN
+}
+
+enum BusinessStatus {
+  PENDIENTE
+  APROBADO
+  PAUSADO
+}
+
+enum ProductStatus {
+  PUBLICADO
+  OCULTO
+}
+
+enum OrderStatus {
+  PENDIENTE
+  RECIBIDO
+  ENTREGADO
+  COMPLETADO
+  CANCELADO
+}
+
+enum PaymentType {
+  TRANSFERENCIA
+  NEQUI
+  DAVIPLATA
+  YAPE_PLIN
+  EFECTIVO
+  OTRO
+}
+
+// ---------- modelos ----------
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  passwordHash  String
+  firstName     String
+  lastName      String?
+  role          Role           @default(EMPRENDEDOR)
+  businesses    Business[] // 1 emprendedor : N emprendimientos
+  notifications Notification[]
+  createdAt     DateTime       @default(now())
+}
+
+model Business {
+  id             String          @id @default(cuid())
+  ownerId        String
+  owner          User            @relation(fields: [ownerId], references: [id])
+  name           String          @unique // nombre unico global
+  description    String
+  category       String
+  contactInfo    String
+  status         BusinessStatus  @default(PENDIENTE)
+  deletedAt      DateTime? // baja logica
+  deleteReason   String?
+  products       Product[]
+  paymentMethods PaymentMethod[]
+  orders         Order[]
+  createdAt      DateTime        @default(now())
+
+  @@index([ownerId])
+  @@index([status, deletedAt])
+}
+
+model Product {
+  id          String        @id @default(cuid())
+  businessId  String
+  business    Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  price       Decimal       @db.Decimal(12, 2) // >= 0 (validado en servicio)
+  category    String
+  stock       Int // >= 0
+  status      ProductStatus @default(PUBLICADO)
+  salesCount  Int           @default(0) // denormalizado para "mas vendidos"
+  createdAt   DateTime      @default(now())
+  orderItems  OrderItem[]
+
+  @@index([category])
+  @@index([status, salesCount(sort: Desc)]) // catalogo publico
+}
+
+model PaymentMethod {
+  id         String      @id @default(cuid())
+  businessId String
+  business   Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  type       PaymentType
+  details    Json // datos requeridos segun el metodo
+  orders     Order[]
+  createdAt  DateTime    @default(now())
+
+  @@index([businessId])
+}
+
+model Order {
+  id         String      @id @default(cuid())
+  businessId String
+  business   Business    @relation(fields: [businessId], references: [id])
+  status     OrderStatus @default(PENDIENTE)
+
+  // datos del cliente invitado (sin cuenta)
+  guestName    String
+  guestContact String // correo o telefono validado
+
+  paymentMethodId String
+  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+
+  total Decimal @db.Decimal(12, 2)
+
+  // Codigo de confirmacion: se guarda dos veces a partir del MISMO codigo.
+  // - Hash: unico usado para VALIDAR el intento del emprendedor (tiempo constante).
+  // - Cifrado (AES-256-GCM, reversible): unico usado para MOSTRAR el codigo al
+  //   cliente en /seguimiento/[token], incluso tras una regeneracion del admin.
+  // Nunca se persiste el codigo en claro.
+  confirmationCodeHash      String
+  confirmationCodeEncrypted String
+
+  failedAttempts Int     @default(0)
+  codeLocked     Boolean @default(false)
+  trackingToken  String  @unique // enlace de seguimiento del cliente invitado
+  cancelReason   String?
+
+  items     OrderItem[]
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([businessId, status])
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int
+  unitPrice Decimal @db.Decimal(12, 2) // snapshot al momento de la compra
+  subtotal  Decimal @db.Decimal(12, 2)
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model SellerLead {
+  // formulario "Sumate al tablero" del landing
+  id        String   @id @default(cuid())
+  name      String
+  whatsapp  String
+  sells     String // campo "Que vendes?" del formulario del landing
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  // notificaciones internas (sin correo/SMS), solo para emprendedor/admin
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+}
