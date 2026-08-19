@@ -3,17 +3,24 @@ services:
     image: postgres:16-alpine
     container_name: parchu-db-local
     restart: unless-stopped
+    # Valores fijos, sin leer de .env: docker-compose carga automaticamente el
+    # .env del directorio de trabajo para sustituir ${VAR} en este archivo, y
+    # ese MISMO .env ahora tambien guarda las credenciales de la base de
+    # despliegue (Render). Si esto leyera ${POSTGRES_PORT:-5433} etc. de ahi,
+    # cualquier valor que el usuario ponga en .env para produccion remapea
+    # silenciosamente este contenedor local (ya paso una vez). El dev local
+    # debe ser siempre el mismo, sin importar que apunte .env.
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-parchu}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-parchu_local_dev}
-      POSTGRES_DB: ${POSTGRES_DB:-parchu}
+      POSTGRES_USER: parchu
+      POSTGRES_PASSWORD: parchu_local_dev
+      POSTGRES_DB: parchu
     # 5433 en el host: 5432 y 55432 ya estan ocupados por otros proyectos locales.
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "5433:5432"
     volumes:
       - parchu_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-parchu} -d ${POSTGRES_DB:-parchu}"]
+      test: ["CMD-SHELL", "pg_isready -U parchu -d parchu"]
       interval: 5s
       timeout: 5s
       retries: 10

@@ -5,6 +5,12 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
     <main className="mx-auto flex w-full max-w-[520px] flex-1 flex-col justify-center px-6 py-16">
       <Link
         href="/"
+        className="mb-4 font-mono text-xs font-bold text-teal no-underline"
+      >
+        ← Volver al inicio
+      </Link>
+      <Link
+        href="/"
         className="mb-8 flex items-center gap-2.5 font-display text-[22px] tracking-[.5px] no-underline"
       >
         <span className="h-3 w-3 rounded-full bg-coral shadow-[0_2px_3px_rgba(0,0,0,.25)]" />

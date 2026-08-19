@@ -1,4 +1,3 @@
-import { SellerLeadForm } from "@/components/landing/SellerLeadForm";
 import { FeaturedBoard } from "@/components/landing/FeaturedBoard";
 
 // El tablero destacado se lee de la base de datos: sin esto la pagina se
@@ -49,7 +48,7 @@ export default function LandingPage() {
               { href: "#como", label: "Cómo funciona" },
               { href: "/productos", label: "El tablero" },
               { href: "/login", label: "Entrar" },
-              { href: "#unirme", label: "Sumarme" },
+              { href: "/registro", label: "Sumarme" },
             ].map((link) => (
               <a
                 key={link.href}
@@ -78,7 +77,7 @@ export default function LandingPage() {
           encuentren más fácil y vendas más.
         </p>
         <div className="flex flex-wrap gap-4 max-sm:flex-col max-sm:[&>a]:text-center">
-          <a href="#unirme" className={BTN + " bg-ink text-paper"}>
+          <a href="/registro" className={BTN + " bg-ink text-paper"}>
             Quiero vender aquí
           </a>
           <a href="/productos" className={BTN + " bg-transparent text-ink"}>
@@ -141,30 +140,6 @@ export default function LandingPage() {
               SOLO SOBRE VENTAS CONCRETADAS
             </span>
           </div>
-        </div>
-      </section>
-
-      <section id="unirme" className={WRAP + " py-16"}>
-        <div className="rounded-lg bg-ink px-10 py-[52px] text-paper">
-          <h2 className="mb-2.5 font-display text-[clamp(24px,3.6vw,34px)]">
-            Súmate al tablero
-          </h2>
-          <p className="mb-8 max-w-[520px] text-paper/75">
-            Déjanos tus datos y te contactamos para activar tu espacio esta
-            misma semana, o escríbenos directo por WhatsApp.
-          </p>
-          <SellerLeadForm />
-          <p className="mt-[18px] text-[13.5px] text-paper/65">
-            ¿Prefieres algo más directo?{" "}
-            <a
-              href={WHATSAPP_LEAD_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-mustard underline"
-            >
-              Escríbenos por WhatsApp
-            </a>
-          </p>
         </div>
       </section>
 
