@@ -44,6 +44,16 @@ const REQUIRED_FIELD_ERROR: Partial<
       text: "La categoría es obligatoria",
     },
   },
+  checkout: {
+    nombre: {
+      selector: "#checkout-name-error",
+      text: "El nombre es obligatorio",
+    },
+    contacto: {
+      selector: "#checkout-contact-error",
+      text: "El contacto es obligatorio",
+    },
+  },
   product: {
     nombre: {
       selector: "#product-name-error",

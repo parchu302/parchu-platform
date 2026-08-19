@@ -1,5 +1,6 @@
-import type { CatalogProduct } from "@/repositories/catalog-repository";
+import { AddToCartButton } from "@/components/checkout/AddToCartButton";
 import { formatPrice } from "@/lib/format";
+import type { CatalogProduct } from "@/repositories/catalog-repository";
 
 export function ProductCard({ product }: { product: CatalogProduct }) {
   return (
@@ -21,6 +22,8 @@ export function ProductCard({ product }: { product: CatalogProduct }) {
       <span className="inline-block -rotate-2 bg-coral px-2.5 py-1 font-mono text-[13.5px] font-bold text-white">
         {formatPrice(product.price)}
       </span>
+
+      <AddToCartButton productId={product.id} disabled={product.stock <= 0} />
     </li>
   );
 }

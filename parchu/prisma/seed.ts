@@ -180,6 +180,17 @@ const DEMO_PRODUCTS: {
     salesCount: 31,
   },
   {
+    // Stock deliberadamente escaso: caso de "falta de stock" del checkout.
+    id: "seed_prod_ultima_porcion",
+    businessName: "Postres de Cami",
+    name: "Última porción del día",
+    description: "Queda una sola, por eso el stock es 1.",
+    price: 12000,
+    category: "Postres",
+    stock: 1,
+    salesCount: 7,
+  },
+  {
     id: "seed_prod_malteada",
     businessName: "Postres de Cami",
     name: "Malteada de brownie",
