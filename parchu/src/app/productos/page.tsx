@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 
+import { CartSummaryLink } from "@/components/checkout/CartSummaryLink";
 import { CatalogFilters } from "@/components/catalog/CatalogFilters";
 import { Pagination } from "@/components/catalog/Pagination";
 import { ProductCard } from "@/components/catalog/ProductCard";
@@ -32,6 +33,8 @@ export default async function ProductosPage({
 
   return (
     <main className="mx-auto w-full max-w-[1100px] px-6 py-12">
+      <CartSummaryLink />
+
       <Link href="/" className="font-mono text-xs font-bold text-teal">
         ← ParchU
       </Link>
