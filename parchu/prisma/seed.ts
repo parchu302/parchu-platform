@@ -467,8 +467,22 @@ async function seedOrders() {
   );
 }
 
+// Los negocios/productos/pedidos demo son ficticios (nombres y datos de
+// ejemplo): solo deben sembrarse en desarrollo/test, nunca en una base real.
+// Opt-in explicito (no se infiere de NODE_ENV) para que ejecutar el seed
+// contra la base de despliegue jamas cree datos falsos por accidente.
+const SEED_DEMO_DATA = process.env.SEED_DEMO_DATA === "true";
+
 async function main() {
   await seedAdmin();
+
+  if (!SEED_DEMO_DATA) {
+    console.log(
+      "seed: SEED_DEMO_DATA no esta en \"true\" — se omiten negocios, productos y pedidos de ejemplo.",
+    );
+    return;
+  }
+
   await seedDemoData();
   await seedCatalog();
   await seedOrders();

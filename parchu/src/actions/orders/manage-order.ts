@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireRole } from "@/lib/auth-guard";
 import { readField } from "@/lib/form-data";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { reasonSchema } from "@/lib/validations/business";
 import { requireApprovedBusiness } from "@/services/business-service";
 import {
@@ -22,11 +23,28 @@ const INVALID_STATUS_MESSAGE: Record<string, string> = {
   validate: 'El pedido debe estar en estado "Entregado" para validar el código',
 };
 
+// Cubre las cuatro sub-acciones, incluida la validacion de codigo. El bloqueo
+// permanente por 3 intentos (codeLocked) ya cubre el intento de adivinar un
+// codigo puntual; esto es un tope de volumen adicional por sesion, defensa en
+// profundidad contra una sesion comprometida o un script golpeando el panel.
+const ACTOR_LIMIT = { limit: 60, windowMs: 60_000 };
+
 export async function manageOrderAction(
   _prevState: OrderActionState,
   formData: FormData,
 ): Promise<OrderActionState> {
   const session = await requireRole("EMPRENDEDOR");
+
+  const rate = await checkRateLimit(
+    `manage-order:${session.userId}`,
+    ACTOR_LIMIT,
+  );
+  if (!rate.allowed) {
+    return {
+      status: "error",
+      message: "Demasiadas acciones seguidas. Espera un momento e intenta de nuevo.",
+    };
+  }
 
   const action = readField(formData, "action");
   const orderId = readField(formData, "orderId");

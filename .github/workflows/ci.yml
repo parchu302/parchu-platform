@@ -30,6 +30,9 @@ jobs:
     env:
       DATABASE_URL: postgresql://parchu:parchu_ci@localhost:5433/parchu?schema=public
       ADMIN_EMAIL: admin@parchu.ci
+      # Ephemera y descartable en cada run: aqui SI es seguro sembrar datos demo,
+      # los necesitan los E2E de paginacion (Fase 4).
+      SEED_DEMO_DATA: "true"
 
     steps:
       - uses: actions/checkout@v4

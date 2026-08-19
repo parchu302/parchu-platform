@@ -178,3 +178,17 @@ model Notification {
 
   @@index([userId, read])
 }
+
+model RateLimitAttempt {
+  // Contador de ventana fija: una fila por (key, windowStart). El incremento
+  // es atomico via INSERT ... ON CONFLICT, para que llamadas concurrentes no
+  // pisen el conteo entre si (mismo patron que la reserva de stock).
+  id          String   @id @default(cuid())
+  key         String
+  windowStart DateTime
+  count       Int      @default(1)
+  createdAt   DateTime @default(now())
+
+  @@unique([key, windowStart])
+  @@index([key])
+}

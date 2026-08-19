@@ -77,6 +77,11 @@ export async function fillRegisterForm(
     password?: string;
   },
 ) {
+  // Todos los intentos de registro locales comparten la misma IP ("local",
+  // sin proxy delante): se limpia antes de cada escenario por la misma razon
+  // que en loginThroughUi.
+  await db.rateLimitAttempt.deleteMany({ where: { key: "register:ip:local" } });
+
   await page.goto("/registro");
   await page.locator("#register-firstName").fill(fields.firstName ?? "Ana");
   await page.locator("#register-lastName").fill(fields.lastName ?? "Pérez");
@@ -84,11 +89,20 @@ export async function fillRegisterForm(
   await page.locator("#register-password").fill(fields.password ?? "");
 }
 
+// La suite reutiliza a proposito las mismas cuentas (admin, ana@uni.edu) en
+// decenas de escenarios independientes dentro de la misma ventana de rate
+// limit, algo que un usuario real nunca haria. Se limpia el contador de esa
+// cuenta antes de cada intento para simular "paso el tiempo" entre
+// escenarios, sin debilitar el limite real que ve produccion.
 export async function loginThroughUi(
   page: Page,
   email: string,
   password: string,
 ) {
+  await db.rateLimitAttempt.deleteMany({
+    where: { key: `login:email:${email.toLowerCase()}` },
+  });
+
   await page.goto("/login");
   await page.locator("#login-email").fill(email);
   await page.locator("#login-password").fill(password);
