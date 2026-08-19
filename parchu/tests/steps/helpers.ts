@@ -56,6 +56,16 @@ export async function countUsers(email: string): Promise<number> {
   return db.user.count({ where: { email: email.toLowerCase() } });
 }
 
+// Order.businessId no tiene cascada: hay que borrar pedidos e items antes de
+// poder borrar el emprendimiento. Vive aquí para que ningún reset se olvide.
+export async function deleteBusinessesCascade(where: object) {
+  await db.orderItem.deleteMany({ where: { order: { business: where } } });
+  await db.order.deleteMany({ where: { business: where } });
+  await db.product.deleteMany({ where: { business: where } });
+  await db.paymentMethod.deleteMany({ where: { business: where } });
+  await db.business.deleteMany({ where });
+}
+
 // ---------- formularios ----------
 
 export async function fillRegisterForm(

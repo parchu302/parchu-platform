@@ -1,12 +1,21 @@
-import { Prisma, type Order } from "@prisma/client";
+import { Prisma, type Order, type OrderStatus } from "@prisma/client";
 
-import { createConfirmationCode } from "@/lib/confirmation-code";
+import {
+  createConfirmationCode,
+  verifyConfirmationCode,
+} from "@/lib/confirmation-code";
 import { db } from "@/lib/db";
 import { generateTrackingToken } from "@/lib/tracking-token";
 import type { CheckoutInput } from "@/lib/validations/checkout";
 import {
   InsufficientStockError,
+  cancelOrderReleasingStock,
+  completeOrderCountingSales,
   createOrderWithStockReservation,
+  findOrderForBusiness,
+  regenerateConfirmationCode,
+  registerFailedCodeAttempt,
+  updateOrderStatus,
 } from "@/repositories/order-repository";
 
 export type CartLine = {
@@ -146,4 +155,155 @@ export async function createGuestOrder(
     }
     throw error;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Ciclo de vida del pedido (§6)
+//
+//   PENDIENTE --recibir--> RECIBIDO --entregar--> ENTREGADO --codigo--> COMPLETADO
+//        |                     |
+//        +------cancelar-------+--> CANCELADO (libera el stock reservado)
+//
+// Cancelar NO es valido desde ENTREGADO ni COMPLETADO.
+// ---------------------------------------------------------------------------
+
+export const MAX_FAILED_CODE_ATTEMPTS = 3;
+
+const CANCELABLE_FROM: OrderStatus[] = ["PENDIENTE", "RECIBIDO"];
+
+export type OrderTransitionOutcome =
+  | { ok: true; order: Order }
+  | { ok: false; reason: "NOT_FOUND" | "INVALID_STATUS" };
+
+export type ValidateCodeOutcome =
+  | { ok: true; order: Order }
+  | {
+      ok: false;
+      reason: "NOT_FOUND" | "INVALID_STATUS" | "LOCKED" | "INCORRECT_CODE";
+      failedAttempts?: number;
+      justLocked?: boolean;
+    };
+
+export type UnlockCodeOutcome =
+  | { ok: true; order: Order }
+  | { ok: false; reason: "NOT_FOUND" | "NOT_LOCKED" };
+
+// El emprendedor solo puede operar pedidos de SU emprendimiento: el scoping va
+// en la consulta, no en un chequeo posterior.
+export async function receiveOrder(
+  orderId: string,
+  businessId: string,
+): Promise<OrderTransitionOutcome> {
+  const order = await findOrderForBusiness(orderId, businessId);
+  if (!order) return { ok: false, reason: "NOT_FOUND" };
+
+  if (order.status !== "PENDIENTE") {
+    return { ok: false, reason: "INVALID_STATUS" };
+  }
+
+  return { ok: true, order: await updateOrderStatus(orderId, "RECIBIDO") };
+}
+
+export async function markOrderDelivered(
+  orderId: string,
+  businessId: string,
+): Promise<OrderTransitionOutcome> {
+  const order = await findOrderForBusiness(orderId, businessId);
+  if (!order) return { ok: false, reason: "NOT_FOUND" };
+
+  // Solo desde RECIBIDO: entregar algo que no se ha recibido no tiene sentido.
+  if (order.status !== "RECIBIDO") {
+    return { ok: false, reason: "INVALID_STATUS" };
+  }
+
+  return { ok: true, order: await updateOrderStatus(orderId, "ENTREGADO") };
+}
+
+export async function cancelOrder(
+  orderId: string,
+  businessId: string,
+  reason: string,
+): Promise<OrderTransitionOutcome> {
+  const order = await findOrderForBusiness(orderId, businessId);
+  if (!order) return { ok: false, reason: "NOT_FOUND" };
+
+  if (!CANCELABLE_FROM.includes(order.status)) {
+    return { ok: false, reason: "INVALID_STATUS" };
+  }
+
+  const cancelled = await cancelOrderReleasingStock(
+    orderId,
+    reason,
+    order.items.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+    })),
+  );
+
+  return { ok: true, order: cancelled };
+}
+
+export async function validateOrderCode(
+  orderId: string,
+  businessId: string,
+  candidateCode: string,
+): Promise<ValidateCodeOutcome> {
+  const order = await findOrderForBusiness(orderId, businessId);
+  if (!order) return { ok: false, reason: "NOT_FOUND" };
+
+  // El codigo solo se valida sobre un pedido entregado. Este rechazo NO cuenta
+  // como intento fallido: es una precondicion, no un codigo equivocado.
+  if (order.status !== "ENTREGADO") {
+    return { ok: false, reason: "INVALID_STATUS" };
+  }
+
+  if (order.codeLocked) {
+    return { ok: false, reason: "LOCKED", failedAttempts: order.failedAttempts };
+  }
+
+  if (verifyConfirmationCode(order.confirmationCodeHash, candidateCode)) {
+    const completed = await completeOrderCountingSales(
+      orderId,
+      order.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+      })),
+    );
+    return { ok: true, order: completed };
+  }
+
+  const failedAttempts = order.failedAttempts + 1;
+  const codeLocked = failedAttempts >= MAX_FAILED_CODE_ATTEMPTS;
+
+  await registerFailedCodeAttempt(orderId, failedAttempts, codeLocked);
+
+  return {
+    ok: false,
+    reason: codeLocked ? "LOCKED" : "INCORRECT_CODE",
+    failedAttempts,
+    justLocked: codeLocked,
+  };
+}
+
+// Desbloqueo del administrador: regenera el codigo en vez de limpiar el
+// contador, para que el codigo viejo (que ya se intento adivinar) deje de
+// servir. El cliente ve el nuevo en su enlace de seguimiento.
+export async function unlockOrderCode(
+  orderId: string,
+): Promise<UnlockCodeOutcome> {
+  const order = await db.order.findUnique({ where: { id: orderId } });
+  if (!order) return { ok: false, reason: "NOT_FOUND" };
+
+  if (!order.codeLocked) {
+    return { ok: false, reason: "NOT_LOCKED" };
+  }
+
+  const confirmation = createConfirmationCode();
+  const updated = await regenerateConfirmationCode(
+    orderId,
+    confirmation.hash,
+    confirmation.encrypted,
+  );
+
+  return { ok: true, order: updated };
 }

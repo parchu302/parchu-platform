@@ -70,6 +70,7 @@ export default async function BusinessLayout({
           { href: `/panel/${business.id}`, label: "Resumen" },
           { href: `/panel/${business.id}/productos`, label: "Productos" },
           { href: `/panel/${business.id}/pagos`, label: "Formas de pago" },
+          { href: `/panel/${business.id}/pedidos`, label: "Pedidos" },
         ].map((item) => (
           <Link
             key={item.href}

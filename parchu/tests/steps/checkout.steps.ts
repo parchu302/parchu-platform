@@ -4,6 +4,7 @@ import { decryptConfirmationCode } from "@/lib/confirmation-code";
 import { db } from "@/lib/db";
 import { hashPassword } from "@/lib/password";
 
+import { deleteBusinessesCascade } from "./helpers";
 import { Given, Then, When } from "./world";
 
 const MARKER = "CHECKOUT-E2E";
@@ -17,15 +18,7 @@ const GUEST = {
 };
 
 async function resetCheckoutData() {
-  await db.orderItem.deleteMany({
-    where: { order: { business: { name: BUSINESS_NAME } } },
-  });
-  await db.order.deleteMany({ where: { business: { name: BUSINESS_NAME } } });
-  await db.product.deleteMany({ where: { business: { name: BUSINESS_NAME } } });
-  await db.paymentMethod.deleteMany({
-    where: { business: { name: BUSINESS_NAME } },
-  });
-  await db.business.deleteMany({ where: { name: BUSINESS_NAME } });
+  await deleteBusinessesCascade({ name: BUSINESS_NAME });
 }
 
 async function createShop(stock: number) {

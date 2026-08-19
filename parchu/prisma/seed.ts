@@ -1,6 +1,13 @@
-import { PrismaClient, type BusinessStatus, type PaymentType } from "@prisma/client";
+import {
+  PrismaClient,
+  type BusinessStatus,
+  type OrderStatus,
+  type PaymentType,
+} from "@prisma/client";
 
+import { createConfirmationCode } from "../src/lib/confirmation-code";
 import { hashPassword } from "../src/lib/password";
+import { generateTrackingToken } from "../src/lib/tracking-token";
 
 const prisma = new PrismaClient();
 
@@ -366,10 +373,105 @@ async function seedCatalog() {
   );
 }
 
+// Pedidos demo en cada estado, incluido uno con la validacion bloqueada, para
+// poder recorrer el panel del emprendedor y el desbloqueo del admin sin tener
+// que fabricarlos a mano.
+const DEMO_ORDERS: {
+  id: string;
+  productId: string;
+  status: OrderStatus;
+  guestName: string;
+  quantity: number;
+  failedAttempts?: number;
+  codeLocked?: boolean;
+}[] = [
+  { id: "seed_order_pendiente", productId: "seed_prod_brownie", status: "PENDIENTE", guestName: "Sofía Ramírez", quantity: 2 },
+  { id: "seed_order_recibido", productId: "seed_prod_galletas", status: "RECIBIDO", guestName: "Mateo Gómez", quantity: 1 },
+  { id: "seed_order_entregado", productId: "seed_prod_cheesecake", status: "ENTREGADO", guestName: "Laura Díaz", quantity: 1 },
+  {
+    id: "seed_order_bloqueado",
+    productId: "seed_prod_brownie",
+    status: "ENTREGADO",
+    guestName: "Andrés Peña",
+    quantity: 1,
+    failedAttempts: 3,
+    codeLocked: true,
+  },
+];
+
+async function seedOrders() {
+  // Si ya existen, no se recrean: los codigos no deben cambiar en cada seed.
+  const existing = await prisma.order.count({
+    where: { id: { in: DEMO_ORDERS.map((order) => order.id) } },
+  });
+  if (existing === DEMO_ORDERS.length) {
+    console.log("seed: pedidos demo ya presentes.");
+    return;
+  }
+
+  for (const demo of DEMO_ORDERS) {
+    const product = await prisma.product.findUnique({
+      where: { id: demo.productId },
+      select: { id: true, price: true, businessId: true },
+    });
+    if (!product) continue;
+
+    const paymentMethod = await prisma.paymentMethod.findFirst({
+      where: { businessId: product.businessId },
+      select: { id: true },
+    });
+    if (!paymentMethod) continue;
+
+    const confirmation = createConfirmationCode();
+    const subtotal = product.price.mul(demo.quantity);
+
+    await prisma.order.upsert({
+      where: { id: demo.id },
+      update: {
+        status: demo.status,
+        failedAttempts: demo.failedAttempts ?? 0,
+        codeLocked: demo.codeLocked ?? false,
+      },
+      create: {
+        id: demo.id,
+        businessId: product.businessId,
+        paymentMethodId: paymentMethod.id,
+        status: demo.status,
+        guestName: demo.guestName,
+        guestContact: "cliente@uni.edu",
+        total: subtotal,
+        confirmationCodeHash: confirmation.hash,
+        confirmationCodeEncrypted: confirmation.encrypted,
+        trackingToken: generateTrackingToken(),
+        failedAttempts: demo.failedAttempts ?? 0,
+        codeLocked: demo.codeLocked ?? false,
+        items: {
+          create: [
+            {
+              productId: product.id,
+              quantity: demo.quantity,
+              unitPrice: product.price,
+              subtotal,
+            },
+          ],
+        },
+      },
+    });
+  }
+
+  const byStatus = await prisma.order.groupBy({ by: ["status"], _count: true });
+  console.log(
+    `seed: ${DEMO_ORDERS.length} pedidos demo (${byStatus
+      .map((row) => `${row.status}=${row._count}`)
+      .join(", ")}).`,
+  );
+}
+
 async function main() {
   await seedAdmin();
   await seedDemoData();
   await seedCatalog();
+  await seedOrders();
 }
 
 main()

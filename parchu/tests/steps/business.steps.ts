@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 
 import {
   BUSINESS_SETTLED,
+  deleteBusinessesCascade,
   ensureUser,
   fillBusinessForm,
   loginThroughUi,
@@ -37,8 +38,8 @@ async function resetBusinesses() {
   await db.notification.deleteMany({
     where: { user: { email: { contains: "e2e" } } },
   });
-  await db.business.deleteMany({
-    where: { OR: [{ name: { contains: MARKER } }, { name: "Postres Ana" }] },
+  await deleteBusinessesCascade({
+    OR: [{ name: { contains: MARKER } }, { name: "Postres Ana" }],
   });
 }
 

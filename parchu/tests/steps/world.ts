@@ -17,6 +17,10 @@ export type TestState = {
   businessName: string;
   businessId: string;
   businessesBefore: number;
+  orderId: string;
+  orderCode: string;
+  orderReference: string;
+  trackingToken: string;
 };
 
 export const test = base.extend<{ state: TestState }>({
@@ -29,6 +33,10 @@ export const test = base.extend<{ state: TestState }>({
       businessName: "",
       businessId: "",
       businessesBefore: 0,
+      orderId: "",
+      orderCode: "",
+      orderReference: "",
+      trackingToken: "",
     });
   },
 });

@@ -55,3 +55,17 @@ Característica: Inicio de sesión y gestión de administrador
     Entonces el sistema cambia el estado del emprendimiento a "Aprobado"
     Y sus productos vuelven a ser visibles en la vista pública
     Y notifica al emprendedor la reactivación
+
+  Escenario: Desbloqueo de un pedido con código de confirmación bloqueado
+    Dado que existe un pedido cuyo código de confirmación está bloqueado por exceso de intentos fallidos
+    Cuando el administrador regenera el código de confirmación del pedido
+    Entonces el sistema genera un nuevo código de confirmación único para el pedido
+    Y reinicia el contador de intentos fallidos del pedido a cero
+    Y desbloquea la validación del código para ese pedido
+    Y actualiza el enlace de seguimiento del cliente con el nuevo código
+
+  Escenario: Intento de regenerar el código de un pedido no bloqueado
+    Dado que existe un pedido cuyo código de confirmación no está bloqueado
+    Cuando el administrador intenta regenerar el código de confirmación del pedido
+    Entonces el sistema muestra un mensaje indicando que el pedido no requiere desbloqueo
+    Y el código de confirmación no cambia

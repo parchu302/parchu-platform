@@ -1,4 +1,4 @@
-import type { Order, Prisma } from "@prisma/client";
+import type { Order, OrderStatus, Prisma } from "@prisma/client";
 
 import { db } from "@/lib/db";
 
@@ -85,6 +85,110 @@ export async function findOrderByTrackingToken(trackingToken: string) {
       items: {
         include: { product: { select: { name: true } } },
       },
+    },
+  });
+}
+
+export async function findOrderForBusiness(orderId: string, businessId: string) {
+  return db.order.findFirst({
+    where: { id: orderId, businessId },
+    include: { items: true },
+  });
+}
+
+export async function listOrdersForBusiness(businessId: string) {
+  return db.order.findMany({
+    where: { businessId },
+    include: {
+      items: { include: { product: { select: { name: true } } } },
+      paymentMethod: { select: { type: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function listLockedOrders() {
+  return db.order.findMany({
+    where: { codeLocked: true },
+    include: { business: { select: { name: true } } },
+    orderBy: { updatedAt: "desc" },
+  });
+}
+
+// Cancelar libera el stock reservado. Va en la misma transaccion que el cambio
+// de estado: si una de las dos partes fallara, no puede quedar stock devuelto
+// sobre un pedido que sigue vivo (ni al reves).
+export async function cancelOrderReleasingStock(
+  orderId: string,
+  reason: string,
+  items: { productId: string; quantity: number }[],
+): Promise<Order> {
+  return db.$transaction(async (tx) => {
+    for (const item of items) {
+      await tx.product.update({
+        where: { id: item.productId },
+        data: { stock: { increment: item.quantity } },
+      });
+    }
+
+    return tx.order.update({
+      where: { id: orderId },
+      data: { status: "CANCELADO", cancelReason: reason },
+    });
+  });
+}
+
+// Completar acredita las ventas. Tambien transaccional: el contador de "mas
+// vendidos" alimenta el catalogo publico y no puede desincronizarse del estado.
+export async function completeOrderCountingSales(
+  orderId: string,
+  items: { productId: string; quantity: number }[],
+): Promise<Order> {
+  return db.$transaction(async (tx) => {
+    for (const item of items) {
+      await tx.product.update({
+        where: { id: item.productId },
+        data: { salesCount: { increment: item.quantity } },
+      });
+    }
+
+    return tx.order.update({
+      where: { id: orderId },
+      data: { status: "COMPLETADO", failedAttempts: 0 },
+    });
+  });
+}
+
+export async function updateOrderStatus(
+  orderId: string,
+  status: OrderStatus,
+): Promise<Order> {
+  return db.order.update({ where: { id: orderId }, data: { status } });
+}
+
+export async function registerFailedCodeAttempt(
+  orderId: string,
+  failedAttempts: number,
+  codeLocked: boolean,
+): Promise<Order> {
+  return db.order.update({
+    where: { id: orderId },
+    data: { failedAttempts, codeLocked },
+  });
+}
+
+export async function regenerateConfirmationCode(
+  orderId: string,
+  hash: string,
+  encrypted: string,
+): Promise<Order> {
+  return db.order.update({
+    where: { id: orderId },
+    data: {
+      confirmationCodeHash: hash,
+      confirmationCodeEncrypted: encrypted,
+      failedAttempts: 0,
+      codeLocked: false,
     },
   });
 }

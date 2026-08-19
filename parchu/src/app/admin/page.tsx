@@ -49,12 +49,20 @@ export default async function AdminPage() {
         ))}
       </div>
 
-      <Link
-        href="/admin/emprendimientos"
-        className="mt-8 inline-block rounded-[3px] border-2 border-ink bg-ink px-[26px] py-[15px] text-[15.5px] font-bold text-paper no-underline"
-      >
-        Gestionar emprendimientos
-      </Link>
+      <div className="mt-8 flex flex-wrap gap-4">
+        <Link
+          href="/admin/emprendimientos"
+          className="inline-block rounded-[3px] border-2 border-ink bg-ink px-[26px] py-[15px] text-[15.5px] font-bold text-paper no-underline"
+        >
+          Gestionar emprendimientos
+        </Link>
+        <Link
+          href="/admin/pedidos"
+          className="inline-block rounded-[3px] border-2 border-ink bg-transparent px-[26px] py-[15px] text-[15.5px] font-bold text-ink no-underline"
+        >
+          Pedidos bloqueados
+        </Link>
+      </div>
     </main>
   );
 }

@@ -98,3 +98,37 @@ test.describe("protección de rutas (deny by default)", () => {
     await expect(page).toHaveURL(/\/login$/);
   });
 });
+
+test.describe("desbloqueo de pedidos restringido al administrador", () => {
+  test("un emprendedor no puede acceder al panel de pedidos bloqueados", async ({
+    page,
+  }) => {
+    await loginAs(page, EMPRENDEDOR_EMAIL, PASSWORD);
+
+    await page.goto("/admin/pedidos");
+
+    // El proxy lo devuelve a su propio panel.
+    await expect(page).toHaveURL(/\/panel$/);
+  });
+
+  test("la acción de desbloqueo rechaza a quien no es administrador", async ({
+    page,
+  }) => {
+    await loginAs(page, EMPRENDEDOR_EMAIL, PASSWORD);
+
+    const locked = await db.order.findFirst({ where: { codeLocked: true } });
+    test.skip(!locked, "no hay pedidos bloqueados sembrados");
+
+    // Invocación directa, saltándose la interfaz: requireRole debe rechazarla
+    // igual, porque las Server Actions son alcanzables por POST directo.
+    const before = await db.order.findUnique({ where: { id: locked!.id } });
+
+    await page.request.post("/admin/pedidos", {
+      form: { orderId: locked!.id },
+    });
+
+    const after = await db.order.findUnique({ where: { id: locked!.id } });
+    expect(after?.codeLocked).toBe(true);
+    expect(after?.confirmationCodeHash).toBe(before?.confirmationCodeHash);
+  });
+});

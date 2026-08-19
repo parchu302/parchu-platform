@@ -3,7 +3,7 @@ import type { BusinessStatus } from "@prisma/client";
 
 import { db } from "@/lib/db";
 
-import { ensureUser } from "./helpers";
+import { deleteBusinessesCascade, ensureUser } from "./helpers";
 import { Given, Then, When } from "./world";
 
 const MARKER = "E2E";
@@ -42,13 +42,7 @@ async function waitForCatalogOutcome(page: Page) {
 async function createBusinessWithStatus(status: BusinessStatus) {
   const ownerId = await ensureUser(EMPRENDEDOR_EMAIL);
 
-  await db.product.deleteMany({
-    where: { business: { name: { contains: MARKER } } },
-  });
-  await db.paymentMethod.deleteMany({
-    where: { business: { name: { contains: MARKER } } },
-  });
-  await db.business.deleteMany({ where: { name: BUSINESS_NAME } });
+  await deleteBusinessesCascade({ name: { contains: MARKER } });
 
   return db.business.create({
     data: {
