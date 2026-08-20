@@ -6,6 +6,7 @@ export type CatalogProduct = {
   id: string;
   name: string;
   description: string | null;
+  image: string | null;
   price: string;
   category: string;
   stock: number;
@@ -84,6 +85,7 @@ export async function findPublicProducts(
       p."id",
       p."name",
       p."description",
+      p."imageBase64" AS "image",
       p."price"::text AS "price",
       p."category",
       p."stock",

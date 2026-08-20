@@ -9,6 +9,14 @@ export function ProductCard({ product }: { product: CatalogProduct }) {
       data-product-category={product.category}
       className="relative border-[1.5px] border-line bg-[#FAF6EC] px-[18px] pb-[22px] pt-5 shadow-[3px_5px_10px_rgba(43,33,24,.15)]"
     >
+      {product.image ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={product.image}
+          alt={product.name}
+          className="mb-3 h-36 w-full rounded border-[1.5px] border-line object-cover"
+        />
+      ) : null}
       <div className="font-mono text-[11px] font-bold uppercase tracking-[.08em] text-teal">
         {product.category}
       </div>

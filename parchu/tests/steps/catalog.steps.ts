@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { expect, type Page } from "@playwright/test";
 import type { BusinessStatus } from "@prisma/client";
 
@@ -5,6 +7,9 @@ import { db } from "@/lib/db";
 
 import { deleteBusinessesCascade, ensureUser } from "./helpers";
 import { Given, Then, When } from "./world";
+
+const VALID_IMAGE_PATH = path.join(process.cwd(), "tests/fixtures/product-image.png");
+const NOT_AN_IMAGE_PATH = path.join(process.cwd(), "tests/fixtures/not-an-image.txt");
 
 const MARKER = "E2E";
 const EMPRENDEDOR_EMAIL = "emprendedor.e2e@uni.edu";
@@ -136,6 +141,20 @@ When("confirma el registro del producto", async ({ page }) => {
   await waitForCatalogOutcome(page);
 });
 
+When("adjunta una imagen válida del producto", async ({ page }) => {
+  await page.locator("#product-image").setInputFiles(VALID_IMAGE_PATH);
+  // La compresion en canvas es asincrona: se espera la vista previa antes de
+  // confirmar, para que el campo oculto ya tenga el data URL comprimido.
+  await expect(
+    page.getByAltText("Vista previa del producto"),
+  ).toBeVisible();
+});
+
+When("adjunta un archivo que no es una imagen válida", async ({ page }) => {
+  await page.locator("#product-image").setInputFiles(NOT_AN_IMAGE_PATH);
+  await expect(page.locator("#product-image-error")).toBeVisible();
+});
+
 When(
   "el emprendedor selecciona un método de pago disponible",
   async ({ page, state }) => {
@@ -185,6 +204,23 @@ Then(
     expect(product?.status).toBe(statusLabel === "Publicado" ? "PUBLICADO" : "OCULTO");
     expect(Number(product?.price)).toBe(6000);
     expect(product?.stock).toBe(10);
+  },
+);
+
+Then("guarda la imagen comprimida y codificada en base64", async ({ state }) => {
+  const product = await db.product.findFirst({
+    where: { businessId: state.businessId, name: PRODUCT_NAME },
+  });
+
+  expect(product?.imageBase64).toMatch(/^data:image\/jpeg;base64,/);
+});
+
+Then(
+  "el sistema muestra un error indicando que el archivo debe ser una imagen válida",
+  async ({ page }) => {
+    await expect(page.locator("#product-image-error")).toHaveText(
+      "El archivo debe ser una imagen válida (JPG, PNG o WEBP)",
+    );
   },
 );
 

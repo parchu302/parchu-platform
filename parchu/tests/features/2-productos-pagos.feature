@@ -33,6 +33,21 @@ Característica: Registro de productos y formas de pago
     Entonces el sistema muestra un error indicando que el valor debe ser mayor o igual a cero
     Y el producto no se crea
 
+  Escenario: Registro exitoso de un producto con imagen
+    Cuando el emprendedor completa el formulario con nombre, descripción, precio, categoría y stock del producto
+    Y adjunta una imagen válida del producto
+    Y confirma el registro del producto
+    Entonces el sistema crea el producto asociado a su emprendimiento con estado "Publicado"
+    Y guarda la imagen comprimida y codificada en base64
+    Y muestra un mensaje de confirmación al emprendedor
+
+  Escenario: Registro de producto rechazado por imagen inválida
+    Cuando el emprendedor completa el formulario con nombre, descripción, precio, categoría y stock del producto
+    Y adjunta un archivo que no es una imagen válida
+    Y confirma el registro del producto
+    Entonces el sistema muestra un error indicando que el archivo debe ser una imagen válida
+    Y el producto no se crea
+
   Escenario: Registro exitoso de una forma de pago
     Cuando el emprendedor selecciona un método de pago disponible
     Y completa los datos requeridos para ese método

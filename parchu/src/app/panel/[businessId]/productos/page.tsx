@@ -53,6 +53,14 @@ export default async function ProductosPage({
                 data-product-name={product.name}
                 className="rounded border-2 border-ink bg-paper p-5"
               >
+                {product.imageBase64 ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={product.imageBase64}
+                    alt={product.name}
+                    className="mb-3 h-32 w-full rounded border-2 border-ink object-cover"
+                  />
+                ) : null}
                 <div className="font-mono text-[11px] font-bold uppercase tracking-[.08em] text-teal">
                   {product.category}
                 </div>

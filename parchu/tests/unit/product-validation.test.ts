@@ -75,6 +75,49 @@ describe("productSchema (Gherkin 2)", () => {
       "El precio debe ser un número",
     );
   });
+
+  // Escenario: imagen del producto (opcional)
+  const VALID_IMAGE_DATA_URL =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+  it("acepta el producto sin la clave image (es opcional)", () => {
+    expect(productSchema.safeParse(VALID_PRODUCT).success).toBe(true);
+  });
+
+  it("acepta una imagen vacía y la normaliza a undefined", () => {
+    const result = productSchema.safeParse({ ...VALID_PRODUCT, image: "" });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.image).toBeUndefined();
+    }
+  });
+
+  it("acepta un data URL de imagen válido", () => {
+    const result = productSchema.safeParse({
+      ...VALID_PRODUCT,
+      image: VALID_IMAGE_DATA_URL,
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.image).toBe(VALID_IMAGE_DATA_URL);
+    }
+  });
+
+  it("rechaza un archivo que no es una imagen válida", () => {
+    const result = productSchema.safeParse({
+      ...VALID_PRODUCT,
+      image: "data:text/plain;base64,aG9sYQ==",
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(z.flattenError(result.error).fieldErrors.image?.[0]).toBe(
+        "El archivo debe ser una imagen válida (JPG, PNG o WEBP)",
+      );
+    }
+  });
 });
 
 describe("paymentMethodSchema (Gherkin 2)", () => {

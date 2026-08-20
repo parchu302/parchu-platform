@@ -25,6 +25,7 @@ export async function registerProductAction(
     price: readField(formData, "price"),
     category: readField(formData, "category"),
     stock: readField(formData, "stock"),
+    image: readField(formData, "image"),
   });
 
   if (!parsed.success) {

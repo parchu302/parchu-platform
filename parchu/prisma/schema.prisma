@@ -85,6 +85,7 @@ model Product {
   business    Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
   name        String
   description String?
+  imageBase64 String? // data URL comprimido en el cliente (ver src/lib/image.ts)
   price       Decimal       @db.Decimal(12, 2) // >= 0 (validado en servicio)
   category    String
   stock       Int // >= 0

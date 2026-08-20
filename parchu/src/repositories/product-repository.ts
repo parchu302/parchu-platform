@@ -12,6 +12,7 @@ export async function createProduct(
       businessId,
       name: input.name,
       description: input.description,
+      imageBase64: input.image,
       price: input.price,
       category: input.category,
       stock: input.stock,

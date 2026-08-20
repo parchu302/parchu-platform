@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { isValidProductImage } from "@/lib/image";
+
 // Los valores llegan como texto desde FormData: se convierten y se validan
 // aqui, en el borde, antes de tocar la base de datos.
 function numericField(options: {
@@ -26,7 +28,7 @@ export const productSchema = z.object({
     .trim()
     .min(1, "El nombre es obligatorio")
     .max(80, "El nombre es demasiado largo"),
-  // La descripcion es el unico campo opcional del producto.
+  // La descripcion y la imagen son los unicos campos opcionales del producto.
   description: z
     .string()
     .trim()
@@ -46,6 +48,18 @@ export const productSchema = z.object({
     invalidMessage: "El stock debe ser un número entero",
     integer: true,
   }),
+  // Opcional: cadena vacia cuando el emprendedor no adjunta imagen. Ya llega
+  // comprimida y en base64 desde el cliente (ver compress-image.ts); aqui solo
+  // se verifica que sea realmente una imagen valida, por si alguien se salta
+  // el formulario y hace el POST directo.
+  image: z
+    .string()
+    .refine(
+      (value) => value.length === 0 || isValidProductImage(value),
+      "El archivo debe ser una imagen válida (JPG, PNG o WEBP)",
+    )
+    .transform((value) => (value.length === 0 ? undefined : value))
+    .optional(),
 });
 
 export type ProductInput = z.infer<typeof productSchema>;

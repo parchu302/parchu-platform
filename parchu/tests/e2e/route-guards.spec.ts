@@ -13,6 +13,13 @@ async function loginAs(
   email: string,
   password: string,
 ) {
+  // Este archivo reutiliza el mismo email en varios tests seguidos; sin esto
+  // el 6to login de la corrida choca con el limite de 5/5min por correo (ver
+  // el mismo fix en tests/steps/helpers.ts:loginThroughUi).
+  await db.rateLimitAttempt.deleteMany({
+    where: { key: `login:email:${email.toLowerCase()}` },
+  });
+
   await page.goto("/login");
   await page.locator("#login-email").fill(email);
   await page.locator("#login-password").fill(password);
