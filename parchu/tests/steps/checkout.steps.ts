@@ -117,6 +117,14 @@ async function ordersForShop() {
   return db.order.count({ where: { business: { name: BUSINESS_NAME } } });
 }
 
+async function expectPaymentInstructionsVisible(page: Page) {
+  const box = page.getByTestId("payment-instructions");
+  await expect(box).toBeVisible();
+  await expect(box).toContainText(TRANSFER_DETAILS.banco);
+  await expect(box).toContainText(TRANSFER_DETAILS.numeroCuenta);
+  await expect(box).toContainText(TRANSFER_DETAILS.titular);
+}
+
 // ---------- Dado ----------
 
 Given(
@@ -298,13 +306,13 @@ Then(
 Then(
   "el sistema le muestra los datos de pago para que complete la transferencia",
   async ({ page }) => {
-    const box = page.getByTestId("payment-instructions");
-    await expect(box).toBeVisible();
-    await expect(box).toContainText(TRANSFER_DETAILS.banco);
-    await expect(box).toContainText(TRANSFER_DETAILS.numeroCuenta);
-    await expect(box).toContainText(TRANSFER_DETAILS.titular);
+    await expectPaymentInstructionsVisible(page);
   },
 );
+
+Then("el enlace de seguimiento también muestra los datos de pago", async ({ page }) => {
+  await expectPaymentInstructionsVisible(page);
+});
 
 Then(
   "el sistema muestra un error indicando que el formato de contacto es inválido",

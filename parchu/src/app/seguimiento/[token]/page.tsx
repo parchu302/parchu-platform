@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import type { OrderStatus } from "@prisma/client";
 
+import { PaymentInstructions } from "@/components/checkout/PaymentInstructions";
 import { decryptConfirmationCode } from "@/lib/confirmation-code";
 import { formatPrice } from "@/lib/format";
 import { PAYMENT_METHOD_LABEL } from "@/lib/payment-methods";
@@ -116,6 +117,13 @@ export default async function SeguimientoPage({
         <p className="mt-3 text-[13px] text-ink/70">
           Forma de pago: {PAYMENT_METHOD_LABEL[order.paymentMethod.type]}
         </p>
+        <PaymentInstructions
+          label={PAYMENT_METHOD_LABEL[order.paymentMethod.type]}
+          type={order.paymentMethod.type}
+          // El propio emprendedor la escribio al registrar su forma de pago
+          // (registerPaymentMethod ya la valida como Record<string,string>).
+          details={order.paymentMethod.details as Record<string, string>}
+        />
       </section>
 
       <section className="rounded-lg border-2 border-dashed border-line p-6">

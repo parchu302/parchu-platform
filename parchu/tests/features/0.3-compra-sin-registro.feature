@@ -18,6 +18,9 @@ Característica: Compra de clientes sin registro
     Dado que el cliente tiene productos seleccionados para comprar
     Cuando el cliente selecciona una forma de pago distinta de "Efectivo"
     Entonces el sistema le muestra los datos de pago para que complete la transferencia
+    Cuando el cliente completa sus datos básicos
+    Y confirma la compra
+    Entonces el enlace de seguimiento también muestra los datos de pago
 
   Esquema del escenario: Compra rechazada por campos obligatorios faltantes
     Dado que el cliente tiene productos seleccionados para comprar

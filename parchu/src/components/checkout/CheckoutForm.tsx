@@ -5,7 +5,8 @@ import type { PaymentType } from "@prisma/client";
 
 import { createOrderAction } from "@/actions/checkout/create-order";
 import { initialCheckoutFormState } from "@/actions/checkout/types";
-import { PAYMENT_METHOD_FIELDS } from "@/lib/payment-methods";
+
+import { PaymentInstructions } from "./PaymentInstructions";
 
 const FIELD =
   "w-full rounded border-2 border-ink bg-paper px-3.5 py-3 text-[14.5px] text-ink placeholder:text-ink/40";
@@ -34,11 +35,6 @@ export function CheckoutForm({
   const selectedMethod = paymentMethods.find(
     (method) => method.id === selectedId,
   );
-  // EFECTIVO no tiene campos declarados: esta condicion cubre "cualquier
-  // metodo distinto de efectivo" sin necesitar comparar el tipo a mano.
-  const paymentFields = selectedMethod
-    ? PAYMENT_METHOD_FIELDS[selectedMethod.type]
-    : [];
 
   return (
     <form action={formAction} className="grid gap-4">
@@ -102,25 +98,12 @@ export function CheckoutForm({
           </p>
         ) : null}
 
-        {selectedMethod && paymentFields.length > 0 ? (
-          <div
-            data-testid="payment-instructions"
-            className="mt-3 rounded border-2 border-teal bg-teal/10 px-3.5 py-3 text-[13.5px]"
-          >
-            <p className="mb-1.5 font-bold text-teal">
-              Datos para pagar por {selectedMethod.label}
-            </p>
-            <ul className="grid list-none gap-1 p-0">
-              {paymentFields.map((field) => (
-                <li key={field.name}>
-                  <span className="text-ink/70">{field.label}: </span>
-                  <span className="font-semibold">
-                    {selectedMethod.details[field.name] ?? ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
+        {selectedMethod ? (
+          <PaymentInstructions
+            label={selectedMethod.label}
+            type={selectedMethod.type}
+            details={selectedMethod.details}
+          />
         ) : null}
       </div>
 
