@@ -14,6 +14,11 @@ Característica: Compra de clientes sin registro
     Y genera un enlace de seguimiento único para que el cliente consulte el estado y el código del pedido
     Y muestra al cliente una confirmación con el detalle del pedido, su código de confirmación y su enlace de seguimiento
 
+  Escenario: El cliente ve los datos de pago al elegir una forma distinta de efectivo
+    Dado que el cliente tiene productos seleccionados para comprar
+    Cuando el cliente selecciona una forma de pago distinta de "Efectivo"
+    Entonces el sistema le muestra los datos de pago para que complete la transferencia
+
   Esquema del escenario: Compra rechazada por campos obligatorios faltantes
     Dado que el cliente tiene productos seleccionados para comprar
     Cuando el cliente completa sus datos básicos dejando vacío el campo "<campo>"

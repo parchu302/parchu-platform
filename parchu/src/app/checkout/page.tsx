@@ -72,13 +72,18 @@ export default async function CheckoutPage() {
   const businessId = products[0]!.businessId;
   const paymentMethods = await db.paymentMethod.findMany({
     where: { businessId },
-    select: { id: true, type: true },
+    select: { id: true, type: true, details: true },
     orderBy: { createdAt: "asc" },
   });
 
   const options: CheckoutPaymentOption[] = paymentMethods.map((method) => ({
     id: method.id,
     label: PAYMENT_METHOD_LABEL[method.type],
+    type: method.type,
+    // El propio emprendedor la escribio al registrar su forma de pago
+    // (registerPaymentMethod ya la valida como Record<string,string>): es
+    // seguro leerla de vuelta con esa forma.
+    details: method.details as Record<string, string>,
   }));
 
   return (

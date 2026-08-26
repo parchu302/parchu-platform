@@ -1,9 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
+import type { PaymentType } from "@prisma/client";
 
 import { createOrderAction } from "@/actions/checkout/create-order";
 import { initialCheckoutFormState } from "@/actions/checkout/types";
+import { PAYMENT_METHOD_FIELDS } from "@/lib/payment-methods";
 
 const FIELD =
   "w-full rounded border-2 border-ink bg-paper px-3.5 py-3 text-[14.5px] text-ink placeholder:text-ink/40";
@@ -14,6 +16,8 @@ const ERROR = "mt-1.5 text-[12.5px] text-coral";
 export type CheckoutPaymentOption = {
   id: string;
   label: string;
+  type: PaymentType;
+  details: Record<string, string>;
 };
 
 export function CheckoutForm({
@@ -25,6 +29,16 @@ export function CheckoutForm({
     createOrderAction,
     initialCheckoutFormState,
   );
+  const [selectedId, setSelectedId] = useState("");
+
+  const selectedMethod = paymentMethods.find(
+    (method) => method.id === selectedId,
+  );
+  // EFECTIVO no tiene campos declarados: esta condicion cubre "cualquier
+  // metodo distinto de efectivo" sin necesitar comparar el tipo a mano.
+  const paymentFields = selectedMethod
+    ? PAYMENT_METHOD_FIELDS[selectedMethod.type]
+    : [];
 
   return (
     <form action={formAction} className="grid gap-4">
@@ -71,7 +85,8 @@ export function CheckoutForm({
         <select
           id="checkout-payment"
           name="paymentMethodId"
-          defaultValue=""
+          value={selectedId}
+          onChange={(event) => setSelectedId(event.target.value)}
           className={FIELD}
         >
           <option value="">Selecciona una forma de pago</option>
@@ -85,6 +100,27 @@ export function CheckoutForm({
           <p id="checkout-payment-error" data-field-error className={ERROR}>
             {state.errors.paymentMethodId[0]}
           </p>
+        ) : null}
+
+        {selectedMethod && paymentFields.length > 0 ? (
+          <div
+            data-testid="payment-instructions"
+            className="mt-3 rounded border-2 border-teal bg-teal/10 px-3.5 py-3 text-[13.5px]"
+          >
+            <p className="mb-1.5 font-bold text-teal">
+              Datos para pagar por {selectedMethod.label}
+            </p>
+            <ul className="grid list-none gap-1 p-0">
+              {paymentFields.map((field) => (
+                <li key={field.name}>
+                  <span className="text-ink/70">{field.label}: </span>
+                  <span className="font-semibold">
+                    {selectedMethod.details[field.name] ?? ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
       </div>
 

@@ -17,6 +17,12 @@ const GUEST = {
   contact: "cliente@uni.edu",
 };
 
+const TRANSFER_DETAILS = {
+  banco: "Bancolombia",
+  numeroCuenta: "111-222333-44",
+  titular: "Titular Demo",
+};
+
 async function resetCheckoutData() {
   await deleteBusinessesCascade({ name: BUSINESS_NAME });
 }
@@ -50,6 +56,16 @@ async function createShop(stock: number) {
 
   await db.paymentMethod.create({
     data: { businessId: business.id, type: "EFECTIVO", details: {} },
+  });
+
+  // Segunda forma de pago (no efectivo), sembrada despues para no alterar
+  // cual selecciona selectFirstPaymentMethod() en el resto de escenarios.
+  await db.paymentMethod.create({
+    data: {
+      businessId: business.id,
+      type: "TRANSFERENCIA",
+      details: TRANSFER_DETAILS,
+    },
   });
 
   const product = await db.product.create({
@@ -161,6 +177,25 @@ When("selecciona una forma de pago disponible", async ({ page }) => {
   await selectFirstPaymentMethod(page);
 });
 
+When(
+  "el cliente selecciona una forma de pago distinta de {string}",
+  async ({ page }, label: string) => {
+    const select = page.locator("#checkout-payment");
+    const options = await select.locator("option").all();
+
+    for (const option of options) {
+      const value = await option.getAttribute("value");
+      const text = (await option.textContent())?.trim();
+      if (value && text !== label) {
+        await select.selectOption(value);
+        return;
+      }
+    }
+
+    throw new Error(`No se encontró una forma de pago distinta de "${label}"`);
+  },
+);
+
 // El caso de uso enuncia este paso de dos formas; ambas hacen lo mismo.
 async function confirmPurchase(page: Page) {
   await page.getByRole("button", { name: /confirmar compra/i }).click();
@@ -257,6 +292,17 @@ Then(
     await expect(page.getByTestId("tracking-link")).toContainText(
       "/seguimiento/",
     );
+  },
+);
+
+Then(
+  "el sistema le muestra los datos de pago para que complete la transferencia",
+  async ({ page }) => {
+    const box = page.getByTestId("payment-instructions");
+    await expect(box).toBeVisible();
+    await expect(box).toContainText(TRANSFER_DETAILS.banco);
+    await expect(box).toContainText(TRANSFER_DETAILS.numeroCuenta);
+    await expect(box).toContainText(TRANSFER_DETAILS.titular);
   },
 );
 
