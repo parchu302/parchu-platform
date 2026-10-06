@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createPublicClient } from "@/lib/supabase/public";
 
 export type CatalogProduct = {
   id: string;
@@ -27,8 +27,11 @@ type UntypedRpc = (
   args?: Record<string, unknown>,
 ) => PromiseLike<{ data: unknown; error: Error | null }>;
 
+// Lectura pública con el cliente anon (RESPETA RLS): las RPC de catálogo son
+// SECURITY DEFINER otorgadas a anon y sólo exponen datos públicos, así que no
+// hace falta el cliente service-role para leerlas.
 function rpc(): UntypedRpc {
-  const sb = createAdminClient();
+  const sb = createPublicClient();
   return sb.rpc.bind(sb) as unknown as UntypedRpc;
 }
 
