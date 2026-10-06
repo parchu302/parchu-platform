@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import type { PaymentType } from "@prisma/client";
+import type { PaymentType } from "@/lib/types";
 
 import { createOrderAction } from "@/actions/checkout/create-order";
 import { initialCheckoutFormState } from "@/actions/checkout/types";

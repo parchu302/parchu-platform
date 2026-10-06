@@ -1,6 +1,4 @@
-import { randomUUID } from "node:crypto";
-
-import { db } from "@/lib/db";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export type RateLimitOptions = {
   limit: number;
@@ -30,24 +28,17 @@ export async function checkRateLimit(
     Math.floor(Date.now() / options.windowMs) * options.windowMs,
   );
 
-  const rows = await db.$queryRaw<{ count: number }[]>`
-    INSERT INTO "RateLimitAttempt" ("id", "key", "windowStart", "count")
-    VALUES (${randomUUID()}, ${key}, ${windowStart}, 1)
-    ON CONFLICT ("key", "windowStart")
-    DO UPDATE SET "count" = "RateLimitAttempt"."count" + 1
-    RETURNING "count"
-  `;
-
-  const count = rows[0]?.count ?? 1;
-
-  // Limpieza oportunista: borra ventanas vencidas de esta misma clave para
-  // que la tabla no crezca sin limite. No hace falta un job aparte.
-  await db.rateLimitAttempt.deleteMany({
-    where: {
-      key,
-      windowStart: { lt: new Date(windowStart.getTime() - options.windowMs) },
-    },
+  // Incremento atomico (INSERT ... ON CONFLICT) y limpieza oportunista de
+  // ventanas vencidas de esta misma clave, ambos dentro de la RPC.
+  const sb = createAdminClient();
+  const { data, error } = await sb.rpc("increment_rate_limit", {
+    p_key: key,
+    p_window_start: windowStart.toISOString(),
+    p_cutoff: new Date(windowStart.getTime() - options.windowMs).toISOString(),
   });
+  if (error) throw error;
+
+  const count = data ?? 1;
 
   return {
     allowed: count <= options.limit,

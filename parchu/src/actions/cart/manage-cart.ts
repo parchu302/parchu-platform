@@ -3,19 +3,30 @@
 import { revalidatePath } from "next/cache";
 
 import { readCart, writeCart } from "@/lib/cart";
-import { db } from "@/lib/db";
 import { readField } from "@/lib/form-data";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { type CartActionState } from "./types";
 
 async function loadVisibleProduct(productId: string) {
-  return db.product.findFirst({
-    where: {
-      id: productId,
-      status: "PUBLICADO",
-      business: { status: "APROBADO", deletedAt: null },
-    },
-    select: { id: true, name: true, stock: true, businessId: true },
-  });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("Product")
+    .select(
+      "id, name, stock, businessId, business:Business!inner(status, deletedAt)",
+    )
+    .eq("id", productId)
+    .eq("status", "PUBLICADO")
+    .eq("business.status", "APROBADO")
+    .is("business.deletedAt", null)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    id: data.id,
+    name: data.name,
+    stock: data.stock,
+    businessId: data.businessId,
+  };
 }
 
 export async function addToCartAction(
@@ -33,10 +44,14 @@ export async function addToCartAction(
 
   // Un pedido pertenece a un solo emprendimiento: el carrito no puede mezclar.
   if (cart.length > 0) {
-    const existing = await db.product.findMany({
-      where: { id: { in: cart.map((line) => line.productId) } },
-      select: { businessId: true },
-    });
+    const { data: existing, error } = await createAdminClient()
+      .from("Product")
+      .select("businessId")
+      .in(
+        "id",
+        cart.map((line) => line.productId),
+      );
+    if (error) throw error;
 
     if (existing.some((item) => item.businessId !== product.businessId)) {
       return {

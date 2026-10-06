@@ -1,23 +1,34 @@
-import type { Business, BusinessStatus } from "@prisma/client";
-
-import { db } from "@/lib/db";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { Business, BusinessStatus } from "@/lib/types";
 import type { BusinessInput } from "@/lib/validations/business";
 
 // Toda lectura de negocio filtra la baja logica: un emprendimiento eliminado
 // deja de existir para la aplicacion, aunque su historico se conserve.
-const NOT_DELETED = { deletedAt: null };
 
 export async function createBusiness(
   ownerId: string,
   input: BusinessInput,
 ): Promise<Business> {
-  return db.business.create({
-    data: { ...input, ownerId },
-  });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("Business")
+    .insert({ ...input, ownerId })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 export async function findBusinessById(id: string): Promise<Business | null> {
-  return db.business.findFirst({ where: { id, ...NOT_DELETED } });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("Business")
+    .select("*")
+    .eq("id", id)
+    .is("deletedAt", null)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
 // A diferencia del resto de lecturas, esta NO filtra la baja logica: el indice
@@ -27,43 +38,74 @@ export async function findBusinessById(id: string): Promise<Business | null> {
 export async function findBusinessByNameIncludingDeleted(
   name: string,
 ): Promise<Business | null> {
-  return db.business.findUnique({ where: { name } });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("Business")
+    .select("*")
+    .eq("name", name)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
 export async function listBusinessesByOwner(
   ownerId: string,
 ): Promise<Business[]> {
-  return db.business.findMany({
-    where: { ownerId, ...NOT_DELETED },
-    orderBy: { createdAt: "asc" },
-  });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("Business")
+    .select("*")
+    .eq("ownerId", ownerId)
+    .is("deletedAt", null)
+    .order("createdAt", { ascending: true });
+  if (error) throw error;
+  return data;
 }
 
 export async function listAllBusinesses(): Promise<
   (Business & { owner: { email: string; firstName: string } })[]
 > {
-  return db.business.findMany({
-    where: NOT_DELETED,
-    include: { owner: { select: { email: true, firstName: true } } },
-    orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-  });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("Business")
+    .select("*, owner:profiles!Business_ownerId_fkey(email, firstName)")
+    .is("deletedAt", null)
+    .order("status", { ascending: true })
+    .order("createdAt", { ascending: false });
+  if (error) throw error;
+  return data as unknown as (Business & {
+    owner: { email: string; firstName: string };
+  })[];
 }
 
 export async function updateBusinessStatus(
   id: string,
   status: BusinessStatus,
 ): Promise<Business> {
-  return db.business.update({ where: { id }, data: { status } });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("Business")
+    .update({ status })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 export async function softDeleteBusiness(
   id: string,
   reason: string,
 ): Promise<Business> {
-  return db.business.update({
-    where: { id },
-    data: { deletedAt: new Date(), deleteReason: reason },
-  });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("Business")
+    .update({ deletedAt: new Date().toISOString(), deleteReason: reason })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 export async function countPlatformStats(): Promise<{
@@ -72,12 +114,35 @@ export async function countPlatformStats(): Promise<{
   orders: number;
   pendingBusinesses: number;
 }> {
+  const sb = createAdminClient();
   const [businesses, products, orders, pendingBusinesses] = await Promise.all([
-    db.business.count({ where: NOT_DELETED }),
-    db.product.count({ where: { business: NOT_DELETED } }),
-    db.order.count(),
-    db.business.count({ where: { ...NOT_DELETED, status: "PENDIENTE" } }),
+    sb
+      .from("Business")
+      .select("*", { count: "exact", head: true })
+      .is("deletedAt", null),
+    sb
+      .from("Product")
+      .select("id, business:Business!inner(deletedAt)", {
+        count: "exact",
+        head: true,
+      })
+      .is("business.deletedAt", null),
+    sb.from("Order").select("*", { count: "exact", head: true }),
+    sb
+      .from("Business")
+      .select("*", { count: "exact", head: true })
+      .is("deletedAt", null)
+      .eq("status", "PENDIENTE"),
   ]);
 
-  return { businesses, products, orders, pendingBusinesses };
+  for (const result of [businesses, products, orders, pendingBusinesses]) {
+    if (result.error) throw result.error;
+  }
+
+  return {
+    businesses: businesses.count ?? 0,
+    products: products.count ?? 0,
+    orders: orders.count ?? 0,
+    pendingBusinesses: pendingBusinesses.count ?? 0,
+  };
 }

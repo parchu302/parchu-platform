@@ -1,11 +1,11 @@
-import { Prisma, type Order, type OrderStatus } from "@prisma/client";
-
 import {
   createConfirmationCode,
   verifyConfirmationCode,
 } from "@/lib/confirmation-code";
-import { db } from "@/lib/db";
+import { multiplyMoney, sumMoney } from "@/lib/money";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { generateTrackingToken } from "@/lib/tracking-token";
+import type { Order, OrderStatus } from "@/lib/types";
 import type { CheckoutInput } from "@/lib/validations/checkout";
 import {
   InsufficientStockError,
@@ -52,20 +52,21 @@ export async function createGuestOrder(
 
   // Los productos se releen de la base: del cliente solo se acepta qué quiere
   // comprar y cuánto, nunca el precio ni la disponibilidad.
-  const products = await db.product.findMany({
-    where: {
-      id: { in: cart.map((line) => line.productId) },
-      status: "PUBLICADO",
-      business: { status: "APROBADO", deletedAt: null },
-    },
-    select: {
-      id: true,
-      name: true,
-      price: true,
-      stock: true,
-      businessId: true,
-    },
-  });
+  const sb = createAdminClient();
+  const { data: productRows, error: productsError } = await sb
+    .from("Product")
+    .select(
+      "id, name, price, stock, businessId, business:Business!inner(status, deletedAt)",
+    )
+    .in(
+      "id",
+      cart.map((line) => line.productId),
+    )
+    .eq("status", "PUBLICADO")
+    .eq("business.status", "APROBADO")
+    .is("business.deletedAt", null);
+  if (productsError) throw productsError;
+  const products = productRows;
 
   if (products.length !== cart.length) {
     return { ok: false, reason: "PRODUCT_UNAVAILABLE" };
@@ -79,10 +80,13 @@ export async function createGuestOrder(
   const businessId = products[0]!.businessId;
 
   // La forma de pago debe ser de ese mismo emprendimiento.
-  const paymentMethod = await db.paymentMethod.findFirst({
-    where: { id: input.paymentMethodId, businessId },
-    select: { id: true },
-  });
+  const { data: paymentMethod, error: paymentMethodError } = await sb
+    .from("PaymentMethod")
+    .select("id")
+    .eq("id", input.paymentMethodId)
+    .eq("businessId", businessId)
+    .maybeSingle();
+  if (paymentMethodError) throw paymentMethodError;
 
   if (!paymentMethod) {
     return { ok: false, reason: "PAYMENT_METHOD_INVALID" };
@@ -105,7 +109,7 @@ export async function createGuestOrder(
     };
   }
 
-  // Aritmética con Decimal, no con float: son importes.
+  // Aritmética en centavos (money.ts), no con float directo: son importes.
   const items = cart.map((line) => {
     const product = productById.get(line.productId)!;
     const unitPrice = product.price;
@@ -113,14 +117,11 @@ export async function createGuestOrder(
       productId: line.productId,
       quantity: line.quantity,
       unitPrice,
-      subtotal: unitPrice.mul(line.quantity),
+      subtotal: multiplyMoney(unitPrice, line.quantity),
     };
   });
 
-  const total = items.reduce(
-    (accumulator, item) => accumulator.add(item.subtotal),
-    new Prisma.Decimal(0),
-  );
+  const total = sumMoney(items.map((item) => item.subtotal));
 
   const confirmation = createConfirmationCode();
   const trackingToken = generateTrackingToken();
@@ -291,7 +292,12 @@ export async function validateOrderCode(
 export async function unlockOrderCode(
   orderId: string,
 ): Promise<UnlockCodeOutcome> {
-  const order = await db.order.findUnique({ where: { id: orderId } });
+  const { data: order, error } = await createAdminClient()
+    .from("Order")
+    .select("*")
+    .eq("id", orderId)
+    .maybeSingle();
+  if (error) throw error;
   if (!order) return { ok: false, reason: "NOT_FOUND" };
 
   if (!order.codeLocked) {

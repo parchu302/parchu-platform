@@ -1,4 +1,4 @@
-import { Prisma, type Business, type BusinessStatus } from "@prisma/client";
+import type { Business, BusinessStatus } from "@/lib/types";
 
 import type { BusinessInput } from "@/lib/validations/business";
 import {
@@ -33,8 +33,10 @@ type TransitionAction = keyof typeof ALLOWED_SOURCE_STATUS;
 
 function isUniqueNameViolation(error: unknown): boolean {
   return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2002"
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "23505"
   );
 }
 

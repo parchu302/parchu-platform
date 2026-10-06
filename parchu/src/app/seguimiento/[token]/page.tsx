@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import type { OrderStatus } from "@prisma/client";
+import type { OrderStatus } from "@/lib/types";
 
 import { PaymentInstructions } from "@/components/checkout/PaymentInstructions";
 import { decryptConfirmationCode } from "@/lib/confirmation-code";

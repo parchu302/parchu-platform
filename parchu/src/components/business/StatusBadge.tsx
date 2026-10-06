@@ -1,4 +1,4 @@
-import type { BusinessStatus } from "@prisma/client";
+import type { BusinessStatus } from "@/lib/types";
 
 const LABEL: Record<BusinessStatus, string> = {
   PENDIENTE: "Pendiente de aprobación",

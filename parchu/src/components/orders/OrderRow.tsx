@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import type { OrderStatus } from "@prisma/client";
+import type { OrderStatus } from "@/lib/types";
 
 import { manageOrderAction } from "@/actions/orders/manage-order";
 import { initialOrderActionState } from "@/actions/orders/types";
