@@ -35,7 +35,16 @@ para local cuando Docker esté arriba.
 - 1ea63f6 T2 schema (aplicado a remoto, 9 tablas verificadas).
 - babb91b T3 auth hook + trigger + RLS + hardening (advisor: solo warnings aceptables).
 - a3317a4 T4 RPC transacciones (rate-limit smoke-tested 1→2→3).
-- 104ca51 T5 parcial: database.types.ts + types.ts + money.ts.
+- 104ca51 T5 base: database.types.ts + types.ts + money.ts.
+- 11aa8ea RPC catalogo (count/find/list public products).
+- 745ad34 T5 capa de datos no-auth -> supabase-js (typecheck limpio en migrados).
+- 151b5b2 T6 auth -> Supabase Auth (ssr, proxy); eliminados db/session/password/user-repo.
+- VERIFICACION: smoke test funcional DB OK (orden/stock/rate-limit/rol/hook);
+  typecheck de src/ = 0 errores tras `next typegen`. CERO @prisma/client en src/.
+- PENDIENTE: prisma/seed.ts + ~19 tests (Prisma/argon2); docs/deps cleanup;
+  Storage imagenes (diferido); verificacion runtime de embeds/flujos (Docker/next build).
+- ACCION USUARIO (Dashboard remoto): poner "Confirm email" OFF (si no, el registro
+  no auto-loguea y no hay SMTP). Auth Hook opcional.
 
 ## Notas / bloqueos
 - Working tree llegó con 161 archivos "modificados": son SOLO diferencias CRLF/LF
