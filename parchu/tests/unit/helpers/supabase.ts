@@ -1,3 +1,5 @@
+import type { PostgrestSingleResponse } from "@supabase/supabase-js";
+
 import { createAdminClient } from "@/lib/supabase/admin";
 
 // Helpers compartidos por los tests unitarios contra el Supabase local.
@@ -5,7 +7,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export const sb = createAdminClient();
 
-export function must<T>(result: { data: T | null; error: unknown }): T {
+// Tiparlo con PostgrestSingleResponse<T> hace que T se infiera por identidad
+// (= Row) en vez de colapsar a `never`/`Row | null` con un shape estructural.
+export function must<T>(result: PostgrestSingleResponse<T>): T {
   if (result.error) throw result.error;
   if (result.data === null) throw new Error("consulta sin datos");
   return result.data;
