@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { BusinessStatus } from "@prisma/client";
 
-import { db } from "@/lib/db";
-import { hashPassword } from "@/lib/password";
+import type { BusinessStatus } from "@/lib/types";
 import { registerPaymentMethod } from "@/services/payment-method-service";
 import { registerProduct } from "@/services/product-service";
+
+import {
+  businessIds,
+  createTestUser,
+  deleteTestUsers,
+  must,
+  sb,
+} from "./helpers/supabase";
 
 const MARKER = "fase3";
 
@@ -20,48 +26,45 @@ let ownerId: string;
 let otherOwnerId: string;
 
 async function cleanup() {
-  await db.product.deleteMany({
-    where: { business: { name: { contains: MARKER } } },
-  });
-  await db.paymentMethod.deleteMany({
-    where: { business: { name: { contains: MARKER } } },
-  });
-  await db.business.deleteMany({ where: { name: { contains: MARKER } } });
-  await db.user.deleteMany({ where: { email: { contains: MARKER } } });
-}
-
-async function createOwner(email: string) {
-  const user = await db.user.create({
-    data: {
-      email,
-      passwordHash: await hashPassword("ClaveSegura1"),
-      firstName: "Ana",
-      role: "EMPRENDEDOR",
-    },
-    select: { id: true },
-  });
-  return user.id;
+  const ids = await businessIds(MARKER);
+  if (ids.length > 0) {
+    await sb.from("Product").delete().in("businessId", ids);
+    await sb.from("PaymentMethod").delete().in("businessId", ids);
+    await sb.from("Business").delete().in("id", ids);
+  }
+  await deleteTestUsers(MARKER);
 }
 
 async function createBusiness(status: BusinessStatus, suffix = "") {
-  const business = await db.business.create({
-    data: {
-      ownerId,
-      name: `Negocio ${MARKER}${suffix}`,
-      description: "descripción",
-      category: "Comida",
-      contactInfo: "300 000 0000",
-      status,
-    },
-    select: { id: true },
-  });
+  const business = must(
+    await sb
+      .from("Business")
+      .insert({
+        ownerId,
+        name: `Negocio ${MARKER}${suffix}`,
+        description: "descripción",
+        category: "Comida",
+        contactInfo: "300 000 0000",
+        status,
+      })
+      .select("id")
+      .single(),
+  );
   return business.id;
+}
+
+async function countProducts(businessId: string) {
+  const { count } = await sb
+    .from("Product")
+    .select("*", { count: "exact", head: true })
+    .eq("businessId", businessId);
+  return count;
 }
 
 beforeEach(async () => {
   await cleanup();
-  ownerId = await createOwner(`dueno.${MARKER}@uni.edu`);
-  otherOwnerId = await createOwner(`otro.${MARKER}@uni.edu`);
+  ownerId = await createTestUser(`dueno.${MARKER}@uni.edu`);
+  otherOwnerId = await createTestUser(`otro.${MARKER}@uni.edu`);
 });
 
 afterEach(cleanup);
@@ -90,7 +93,7 @@ describe("gate de emprendimiento aprobado (Gherkin 2)", () => {
       const outcome = await registerProduct(businessId, ownerId, PRODUCT);
 
       expect(outcome).toEqual({ ok: false, reason: "NOT_APPROVED" });
-      expect(await db.product.count({ where: { businessId } })).toBe(0);
+      expect(await countProducts(businessId)).toBe(0);
     },
   );
 
@@ -100,15 +103,22 @@ describe("gate de emprendimiento aprobado (Gherkin 2)", () => {
     const outcome = await registerProduct(businessId, otherOwnerId, PRODUCT);
 
     expect(outcome).toEqual({ ok: false, reason: "NOT_FOUND" });
-    expect(await db.product.count({ where: { businessId } })).toBe(0);
+    expect(await countProducts(businessId)).toBe(0);
   });
 
   it("bloquea el registro en un emprendimiento eliminado", async () => {
     const businessId = await createBusiness("APROBADO");
-    await db.business.update({
-      where: { id: businessId },
-      data: { deletedAt: new Date(), deleteReason: "motivo" },
-    });
+    must(
+      await sb
+        .from("Business")
+        .update({
+          deletedAt: new Date().toISOString(),
+          deleteReason: "motivo",
+        })
+        .eq("id", businessId)
+        .select()
+        .single(),
+    );
 
     expect(await registerProduct(businessId, ownerId, PRODUCT)).toEqual({
       ok: false,

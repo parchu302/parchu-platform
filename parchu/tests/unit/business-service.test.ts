@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { db } from "@/lib/db";
-import { hashPassword } from "@/lib/password";
 import {
   findBusinessById,
   listBusinessesByOwner,
@@ -14,6 +12,13 @@ import {
   registerBusiness,
 } from "@/services/business-service";
 import type { NotificationService } from "@/services/notification-service";
+
+import {
+  createTestUser,
+  deleteTestUsers,
+  must,
+  sb,
+} from "./helpers/supabase";
 
 const MARKER = "fase2";
 const OWNER_EMAIL = `dueno.${MARKER}@uni.edu`;
@@ -39,25 +44,13 @@ function fakeNotifications() {
 let ownerId: string;
 
 async function cleanup() {
-  await db.notification.deleteMany({
-    where: { user: { email: { contains: MARKER } } },
-  });
-  await db.business.deleteMany({ where: { name: { contains: MARKER } } });
-  await db.user.deleteMany({ where: { email: { contains: MARKER } } });
+  await sb.from("Business").delete().like("name", `%${MARKER}%`);
+  await deleteTestUsers(MARKER);
 }
 
 beforeEach(async () => {
   await cleanup();
-  const owner = await db.user.create({
-    data: {
-      email: OWNER_EMAIL,
-      passwordHash: await hashPassword("ClaveSegura1"),
-      firstName: "Ana",
-      role: "EMPRENDEDOR",
-    },
-    select: { id: true },
-  });
-  ownerId = owner.id;
+  ownerId = await createTestUser(OWNER_EMAIL, { firstName: "Ana" });
 });
 
 afterEach(cleanup);
@@ -69,10 +62,14 @@ async function createWithStatus(
   const outcome = await registerBusiness(ownerId, { ...INPUT, name });
   if (!outcome.ok) throw new Error("no se pudo crear el emprendimiento");
   if (status !== "PENDIENTE") {
-    await db.business.update({
-      where: { id: outcome.business.id },
-      data: { status },
-    });
+    must(
+      await sb
+        .from("Business")
+        .update({ status })
+        .eq("id", outcome.business.id)
+        .select()
+        .single(),
+    );
   }
   return outcome.business.id;
 }
@@ -105,7 +102,11 @@ describe("registerBusiness (Gherkin 1)", () => {
     const duplicate = await registerBusiness(ownerId, INPUT);
 
     expect(duplicate).toEqual({ ok: false, reason: "NAME_TAKEN" });
-    expect(await db.business.count({ where: { name: INPUT.name } })).toBe(1);
+    const { count } = await sb
+      .from("Business")
+      .select("*", { count: "exact", head: true })
+      .eq("name", INPUT.name);
+    expect(count).toBe(1);
   });
 
   it("mantiene reservado el nombre de un emprendimiento dado de baja", async () => {
@@ -196,7 +197,7 @@ describe("transiciones de estado (Gherkin 0.2 y §6)", () => {
 
   it("devuelve NOT_FOUND para un emprendimiento inexistente", async () => {
     const { service } = fakeNotifications();
-    expect(await approveBusiness("no-existe", service)).toEqual({
+    expect(await approveBusiness(crypto.randomUUID(), service)).toEqual({
       ok: false,
       reason: "NOT_FOUND",
     });
@@ -213,9 +214,10 @@ describe("eliminación por baja lógica (Gherkin 0.2)", () => {
     expect(outcome.ok).toBe(true);
 
     // La fila sigue existiendo (histórico), pero deja de ser visible.
-    const raw = await db.business.findUnique({ where: { id } });
-    expect(raw?.deletedAt).toBeInstanceOf(Date);
-    expect(raw?.deleteReason).toBe("Incumplimiento de normas");
+    const raw = await sb.from("Business").select("*").eq("id", id).maybeSingle();
+    expect(typeof raw.data?.deletedAt).toBe("string");
+    expect(Number.isNaN(Date.parse(raw.data?.deletedAt ?? ""))).toBe(false);
+    expect(raw.data?.deleteReason).toBe("Incumplimiento de normas");
 
     expect(await findBusinessById(id)).toBeNull();
     expect(await listBusinessesByOwner(ownerId)).toHaveLength(0);

@@ -1,12 +1,10 @@
-import type { OrderStatus } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   decryptConfirmationCode,
   verifyConfirmationCode,
 } from "@/lib/confirmation-code";
-import { db } from "@/lib/db";
-import { hashPassword } from "@/lib/password";
+import type { OrderStatus } from "@/lib/types";
 import {
   MAX_FAILED_CODE_ATTEMPTS,
   cancelOrder,
@@ -16,6 +14,14 @@ import {
   unlockOrderCode,
   validateOrderCode,
 } from "@/services/order-service";
+
+import {
+  businessIds,
+  createTestUser,
+  deleteTestUsers,
+  must,
+  sb,
+} from "./helpers/supabase";
 
 const MARKER = "fase6";
 const INITIAL_STOCK = 10;
@@ -27,60 +33,84 @@ let paymentMethodId: string;
 let productId: string;
 
 async function cleanup() {
-  await db.orderItem.deleteMany({
-    where: { order: { business: { name: { contains: MARKER } } } },
-  });
-  await db.order.deleteMany({
-    where: { business: { name: { contains: MARKER } } },
-  });
-  await db.product.deleteMany({
-    where: { business: { name: { contains: MARKER } } },
-  });
-  await db.paymentMethod.deleteMany({
-    where: { business: { name: { contains: MARKER } } },
-  });
-  await db.business.deleteMany({ where: { name: { contains: MARKER } } });
-  await db.user.deleteMany({ where: { email: { contains: MARKER } } });
+  const ids = await businessIds(MARKER);
+  if (ids.length > 0) {
+    const { data: orders } = await sb
+      .from("Order")
+      .select("id")
+      .in("businessId", ids);
+    const orderIds = (orders ?? []).map((o) => o.id);
+    if (orderIds.length > 0) {
+      await sb.from("OrderItem").delete().in("orderId", orderIds);
+      await sb.from("Order").delete().in("id", orderIds);
+    }
+    await sb.from("Product").delete().in("businessId", ids);
+    await sb.from("PaymentMethod").delete().in("businessId", ids);
+    await sb.from("Business").delete().in("id", ids);
+  }
+  await deleteTestUsers(MARKER);
+}
+
+async function getOrder(id: string) {
+  return must(await sb.from("Order").select("*").eq("id", id).single());
+}
+
+async function updateOrder(
+  id: string,
+  data: {
+    status?: OrderStatus;
+    failedAttempts?: number;
+    codeLocked?: boolean;
+  },
+) {
+  must(await sb.from("Order").update(data).eq("id", id).select().single());
+}
+
+async function getProduct(id: string) {
+  return must(await sb.from("Product").select("*").eq("id", id).single());
 }
 
 async function createShop(suffix: string) {
-  const owner = await db.user.create({
-    data: {
-      email: `dueno${suffix}.${MARKER}@uni.edu`,
-      passwordHash: await hashPassword("ClaveSegura1"),
-      firstName: "Dueño",
-      role: "EMPRENDEDOR",
-    },
-    select: { id: true },
+  const ownerId = await createTestUser(`dueno${suffix}.${MARKER}@uni.edu`, {
+    firstName: "Dueño",
   });
 
-  const business = await db.business.create({
-    data: {
-      ownerId: owner.id,
-      name: `Negocio${suffix} ${MARKER}`,
-      description: "d",
-      category: "Comida",
-      contactInfo: "c",
-      status: "APROBADO",
-    },
-    select: { id: true },
-  });
+  const business = must(
+    await sb
+      .from("Business")
+      .insert({
+        ownerId,
+        name: `Negocio${suffix} ${MARKER}`,
+        description: "d",
+        category: "Comida",
+        contactInfo: "c",
+        status: "APROBADO",
+      })
+      .select("id")
+      .single(),
+  );
 
-  const method = await db.paymentMethod.create({
-    data: { businessId: business.id, type: "EFECTIVO", details: {} },
-    select: { id: true },
-  });
+  const method = must(
+    await sb
+      .from("PaymentMethod")
+      .insert({ businessId: business.id, type: "EFECTIVO", details: {} })
+      .select("id")
+      .single(),
+  );
 
-  const product = await db.product.create({
-    data: {
-      businessId: business.id,
-      name: `Producto${suffix} ${MARKER}`,
-      price: 6000,
-      category: "Comida",
-      stock: INITIAL_STOCK,
-    },
-    select: { id: true },
-  });
+  const product = must(
+    await sb
+      .from("Product")
+      .insert({
+        businessId: business.id,
+        name: `Producto${suffix} ${MARKER}`,
+        price: 6000,
+        category: "Comida",
+        stock: INITIAL_STOCK,
+      })
+      .select("id")
+      .single(),
+  );
 
   return {
     businessId: business.id,
@@ -104,20 +134,18 @@ async function orderInStatus(status: OrderStatus) {
   if (!outcome.ok) throw new Error("no se pudo crear el pedido de prueba");
 
   if (status !== "PENDIENTE") {
-    await db.order.update({ where: { id: outcome.order.id }, data: { status } });
+    await updateOrder(outcome.order.id, { status });
   }
 
   return { id: outcome.order.id, code: outcome.confirmationCode };
 }
 
 async function stockOf(): Promise<number> {
-  const product = await db.product.findUnique({ where: { id: productId } });
-  return product!.stock;
+  return (await getProduct(productId)).stock;
 }
 
 async function statusOf(orderId: string): Promise<OrderStatus> {
-  const order = await db.order.findUnique({ where: { id: orderId } });
-  return order!.status;
+  return (await getOrder(orderId)).status;
 }
 
 beforeEach(async () => {
@@ -188,7 +216,7 @@ describe("cancelación (Gherkin 3)", () => {
       expect(await statusOf(id)).toBe("CANCELADO");
       expect(await stockOf()).toBe(INITIAL_STOCK);
 
-      const order = await db.order.findUnique({ where: { id } });
+      const order = await getOrder(id);
       expect(order?.cancelReason).toBe("Sin ingredientes");
     },
   );
@@ -214,17 +242,17 @@ describe("validación del código (Gherkin 3)", () => {
   // Escenario: Finalización exitosa del pedido mediante código
   it("completa el pedido, reinicia intentos y acredita las ventas", async () => {
     const { id, code } = await orderInStatus("ENTREGADO");
-    await db.order.update({ where: { id }, data: { failedAttempts: 2 } });
+    await updateOrder(id, { failedAttempts: 2 });
 
     const outcome = await validateOrderCode(id, businessId, code);
 
     expect(outcome.ok).toBe(true);
     expect(await statusOf(id)).toBe("COMPLETADO");
 
-    const order = await db.order.findUnique({ where: { id } });
+    const order = await getOrder(id);
     expect(order?.failedAttempts).toBe(0);
 
-    const product = await db.product.findUnique({ where: { id: productId } });
+    const product = await getProduct(productId);
     expect(product?.salesCount).toBe(QUANTITY);
   });
 
@@ -249,14 +277,14 @@ describe("validación del código (Gherkin 3)", () => {
     });
     expect(await statusOf(id)).toBe("ENTREGADO");
 
-    const product = await db.product.findUnique({ where: { id: productId } });
+    const product = await getProduct(productId);
     expect(product?.salesCount).toBe(0);
   });
 
   // Escenario: Bloqueo por exceder el número de intentos fallidos
   it("bloquea la validación al tercer intento fallido", async () => {
     const { id } = await orderInStatus("ENTREGADO");
-    await db.order.update({ where: { id }, data: { failedAttempts: 2 } });
+    await updateOrder(id, { failedAttempts: 2 });
 
     const outcome = await validateOrderCode(id, businessId, "ZZZZZZ");
 
@@ -267,17 +295,14 @@ describe("validación del código (Gherkin 3)", () => {
       justLocked: true,
     });
 
-    const order = await db.order.findUnique({ where: { id } });
+    const order = await getOrder(id);
     expect(order?.codeLocked).toBe(true);
     expect(await statusOf(id)).toBe("ENTREGADO");
   });
 
   it("rechaza cualquier intento mientras esté bloqueado, incluso el correcto", async () => {
     const { id, code } = await orderInStatus("ENTREGADO");
-    await db.order.update({
-      where: { id },
-      data: { failedAttempts: 3, codeLocked: true },
-    });
+    await updateOrder(id, { failedAttempts: 3, codeLocked: true });
 
     expect(await validateOrderCode(id, businessId, code)).toMatchObject({
       ok: false,
@@ -297,7 +322,7 @@ describe("validación del código (Gherkin 3)", () => {
         reason: "INVALID_STATUS",
       });
 
-      const order = await db.order.findUnique({ where: { id } });
+      const order = await getOrder(id);
       // Es un rechazo de precondición, no un código equivocado.
       expect(order?.failedAttempts).toBe(0);
       expect(await statusOf(id)).toBe(status);
@@ -326,16 +351,13 @@ describe("desbloqueo por el administrador (Gherkin 0.2)", () => {
   // Escenario: Desbloqueo de un pedido con código bloqueado
   it("regenera el código, reinicia intentos y desbloquea", async () => {
     const { id, code } = await orderInStatus("ENTREGADO");
-    await db.order.update({
-      where: { id },
-      data: { failedAttempts: 3, codeLocked: true },
-    });
-    const antes = await db.order.findUnique({ where: { id } });
+    await updateOrder(id, { failedAttempts: 3, codeLocked: true });
+    const antes = await getOrder(id);
 
     const outcome = await unlockOrderCode(id);
     expect(outcome.ok).toBe(true);
 
-    const despues = await db.order.findUnique({ where: { id } });
+    const despues = await getOrder(id);
     expect(despues?.codeLocked).toBe(false);
     expect(despues?.failedAttempts).toBe(0);
     expect(despues?.confirmationCodeHash).not.toBe(antes?.confirmationCodeHash);
@@ -355,14 +377,11 @@ describe("desbloqueo por el administrador (Gherkin 0.2)", () => {
 
   it("tras el desbloqueo, el nuevo código completa el pedido", async () => {
     const { id } = await orderInStatus("ENTREGADO");
-    await db.order.update({
-      where: { id },
-      data: { failedAttempts: 3, codeLocked: true },
-    });
+    await updateOrder(id, { failedAttempts: 3, codeLocked: true });
 
     await unlockOrderCode(id);
 
-    const order = await db.order.findUnique({ where: { id } });
+    const order = await getOrder(id);
     const nuevoCodigo = decryptConfirmationCode(
       order!.confirmationCodeEncrypted,
     );
@@ -374,14 +393,14 @@ describe("desbloqueo por el administrador (Gherkin 0.2)", () => {
   // Escenario: Intento de regenerar el código de un pedido no bloqueado
   it("rechaza regenerar un pedido no bloqueado y no cambia el código", async () => {
     const { id } = await orderInStatus("ENTREGADO");
-    const antes = await db.order.findUnique({ where: { id } });
+    const antes = await getOrder(id);
 
     expect(await unlockOrderCode(id)).toEqual({
       ok: false,
       reason: "NOT_LOCKED",
     });
 
-    const despues = await db.order.findUnique({ where: { id } });
+    const despues = await getOrder(id);
     expect(despues?.confirmationCodeHash).toBe(antes?.confirmationCodeHash);
     expect(despues?.confirmationCodeEncrypted).toBe(
       antes?.confirmationCodeEncrypted,
