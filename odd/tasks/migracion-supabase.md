@@ -18,6 +18,18 @@ para local cuando Docker esté arriba.
 - Se retira: Prisma, `@node-rs/argon2`, `jose` (session JWE), `docker-compose` Postgres.
 - Se conserva: crypto de código de confirmación (AES-256-GCM) y tracking token.
 
+## Requerimiento nuevo (usuario): verificación de correo OBLIGATORIA
+- NO se desactiva "Confirm email". El registro exige confirmar el correo.
+- Implementado (commit 55303c5): signUp con emailRedirectTo; ruta /auth/confirm
+  (verifyOtp); registro muestra "revisá tu correo"; login distingue correo no
+  confirmado; config local enable_confirmations=true + template + Inbucket.
+- ACCIÓN USUARIO en Dashboard remoto (para prod):
+  1. Authentication > URL Configuration: Site URL = URL del deploy; Redirect URLs
+     debe incluir `<site>/auth/confirm`.
+  2. Authentication > Emails > template "Confirm signup": el enlace debe apuntar a
+     `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=signup`.
+  3. Configurar SMTP (en prod) para que los correos salgan; en local usa Inbucket.
+
 ## Tareas
 - [x] T1. Deps + scaffold Supabase CLI (`supabase/`) + clientes `supabase-js`/`@supabase/ssr`.
 - [x] T2. Migración SQL del schema (tablas uuid, enums, índices) → aplicada a remoto.
