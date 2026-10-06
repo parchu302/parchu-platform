@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 
-import type { Role } from "@prisma/client";
+import { getSession, type SessionPayload } from "@/lib/session-cookie";
+import type { Role } from "@/lib/types";
 
-import type { SessionPayload } from "@/lib/session";
-import { getSession } from "@/lib/session-cookie";
+export type { SessionPayload };
 
 export function homePathForRole(role: Role): string {
   return role === "ADMIN" ? "/admin" : "/panel";
@@ -17,9 +17,8 @@ export async function requireSession(): Promise<SessionPayload> {
   return session;
 }
 
-// Autorizacion real. El proxy solo hace un chequeo optimista sobre la cookie;
-// los docs de Next advierten explicitamente que no debe ser la unica capa,
-// entre otras cosas porque un cambio de matcher puede dejar rutas sin cubrir.
+// Autorizacion real. El proxy solo hace un chequeo optimista sobre la sesion;
+// los docs de Next advierten que no debe ser la unica capa.
 export async function requireRole(role: Role): Promise<SessionPayload> {
   const session = await requireSession();
 

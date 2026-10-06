@@ -1,35 +1,40 @@
-import { cookies } from "next/headers";
+import { createClient } from "@/lib/supabase/server";
+import type { Role } from "@/lib/types";
 
-import {
-  SESSION_COOKIE_NAME,
-  SESSION_MAX_AGE_SECONDS,
-  type SessionPayload,
-  decryptSession,
-  encryptSession,
-} from "@/lib/session";
+// La sesión la administra Supabase Auth (cookies gestionadas por @supabase/ssr).
+// Este módulo expone la lectura de sesión y el cierre, manteniendo la forma
+// { userId, role } que ya consumen auth-guard y las páginas/acciones.
 
-export async function createSessionCookie(
-  payload: SessionPayload,
-): Promise<void> {
-  const token = await encryptSession(payload);
-  const cookieStore = await cookies();
+export type SessionPayload = {
+  userId: string;
+  role: Role;
+};
 
-  cookieStore.set(SESSION_COOKIE_NAME, token, {
-    httpOnly: true,
-    // En desarrollo se sirve por http: marcarla Secure impediria enviarla.
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_MAX_AGE_SECONDS,
-  });
-}
-
+// getUser() valida el JWT contra el servidor de Auth (no confía en la cookie
+// sin verificar). El rol se lee de profiles: la política RLS permite al usuario
+// ver su propia fila, y así no dependemos de que el Auth Hook esté habilitado.
 export async function getSession(): Promise<SessionPayload | null> {
-  const cookieStore = await cookies();
-  return decryptSession(cookieStore.get(SESSION_COOKIE_NAME)?.value);
+  const sb = await createClient();
+
+  const {
+    data: { user },
+    error,
+  } = await sb.auth.getUser();
+
+  if (error || !user) return null;
+
+  const { data: profile } = await sb
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (!profile) return null;
+
+  return { userId: user.id, role: profile.role };
 }
 
 export async function destroySessionCookie(): Promise<void> {
-  const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE_NAME);
+  const sb = await createClient();
+  await sb.auth.signOut();
 }

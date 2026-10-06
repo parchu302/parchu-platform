@@ -5,7 +5,6 @@ import { redirect } from "next/navigation";
 import { readField } from "@/lib/form-data";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getRequestIp } from "@/lib/request-ip";
-import { createSessionCookie } from "@/lib/session-cookie";
 import { loginSchema } from "@/lib/validations/auth";
 import { login } from "@/services/auth-service";
 import { type AuthFormState } from "./types";
@@ -53,7 +52,6 @@ export async function loginAction(
     return { status: "error", message: INVALID_CREDENTIALS };
   }
 
-  await createSessionCookie({ userId: user.id, role: user.role });
-
+  // signInWithPassword ya dejó la sesión en cookies (cliente SSR).
   redirect(user.role === "ADMIN" ? "/admin" : "/panel");
 }

@@ -6,7 +6,6 @@ import { z } from "zod";
 import { readField } from "@/lib/form-data";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getRequestIp } from "@/lib/request-ip";
-import { createSessionCookie } from "@/lib/session-cookie";
 import { registerSchema } from "@/lib/validations/auth";
 import { registerEmprendedor } from "@/services/auth-service";
 import { type AuthFormState } from "./types";
@@ -55,11 +54,9 @@ export async function registerAction(
     };
   }
 
-  await createSessionCookie({
-    userId: outcome.user.id,
-    role: outcome.user.role,
-  });
-
+  // signUp (con confirmación de correo deshabilitada) ya inició sesión y dejó
+  // la cookie (cliente SSR).
+  //
   // redirect lanza una excepcion de control de flujo: nada despues se ejecuta,
   // por eso va fuera de cualquier try/catch.
   redirect("/panel");
