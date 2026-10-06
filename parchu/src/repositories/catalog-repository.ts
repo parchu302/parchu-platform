@@ -1,6 +1,4 @@
-import { Prisma } from "@prisma/client";
-
-import { db } from "@/lib/db";
+import { createPublicClient } from "@/lib/supabase/public";
 
 export type CatalogProduct = {
   id: string;
@@ -22,96 +20,58 @@ export type CatalogQuery = {
   pageSize: number;
 };
 
-// Path critico de lectura: se resuelve con SQL explicito y parametrizado en vez
-// de con el ORM. Los valores del usuario viajan SIEMPRE como parametros de
-// Prisma.sql (nunca interpolados en el texto de la consulta).
-//
-// La visibilidad publica exige las tres condiciones a la vez: producto
-// publicado, emprendimiento aprobado y no dado de baja.
-function visibilityConditions(query: {
-  category?: string;
-  search?: string;
-}): Prisma.Sql {
-  const conditions: Prisma.Sql[] = [
-    // El cast al enum mantiene utilizable el indice (status, salesCount DESC).
-    Prisma.sql`p."status" = 'PUBLICADO'::"ProductStatus"`,
-    Prisma.sql`b."status" = 'APROBADO'::"BusinessStatus"`,
-    Prisma.sql`b."deletedAt" IS NULL`,
-  ];
+// Estas RPC aun no figuran en database.types.ts: se llaman via un wrapper sin
+// tipos de nombre/argumentos y se tipa el resultado manualmente.
+type UntypedRpc = (
+  fn: string,
+  args?: Record<string, unknown>,
+) => PromiseLike<{ data: unknown; error: Error | null }>;
 
-  if (query.category) {
-    conditions.push(Prisma.sql`p."category" = ${query.category}`);
-  }
-
-  if (query.search) {
-    // ILIKE = coincidencia parcial insensible a mayusculas. Se escapan los
-    // comodines para que un termino como "50%" se busque literalmente.
-    conditions.push(
-      Prisma.sql`p."name" ILIKE ${`%${escapeLikePattern(query.search)}%`} ESCAPE '\\'`,
-    );
-  }
-
-  return Prisma.join(conditions, " AND ");
+// Lectura pública con el cliente anon (RESPETA RLS): las RPC de catálogo son
+// SECURITY DEFINER otorgadas a anon y sólo exponen datos públicos, así que no
+// hace falta el cliente service-role para leerlas.
+function rpc(): UntypedRpc {
+  const sb = createPublicClient();
+  return sb.rpc.bind(sb) as unknown as UntypedRpc;
 }
 
-function escapeLikePattern(value: string): string {
-  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
-}
+// Path critico de lectura: se resuelve con funciones RPC en la base (SQL
+// parametrizado). La visibilidad publica (producto publicado, emprendimiento
+// aprobado y no dado de baja) y el escape de comodines ILIKE viven en ellas.
 
 export async function countPublicProducts(query: {
   category?: string;
   search?: string;
 }): Promise<number> {
-  const rows = await db.$queryRaw<{ total: bigint }[]>`
-    SELECT COUNT(*)::bigint AS total
-    FROM "Product" p
-    JOIN "Business" b ON b."id" = p."businessId"
-    WHERE ${visibilityConditions(query)}
-  `;
-
-  return Number(rows[0]?.total ?? 0);
+  const { data, error } = await rpc()("count_public_products", {
+    p_category: query.category ?? null,
+    p_search: query.search ?? null,
+  });
+  if (error) throw error;
+  return Number(data ?? 0);
 }
 
 export async function findPublicProducts(
   query: CatalogQuery,
 ): Promise<CatalogProduct[]> {
-  const offset = (query.page - 1) * query.pageSize;
-
-  // Orden por mas vendidos; el nombre desempata para que la paginacion sea
-  // estable entre paginas (sin desempate, dos filas con el mismo salesCount
-  // podrian repetirse u omitirse al cambiar de pagina).
-  return db.$queryRaw<CatalogProduct[]>`
-    SELECT
-      p."id",
-      p."name",
-      p."description",
-      p."imageBase64" AS "image",
-      p."price"::text AS "price",
-      p."category",
-      p."stock",
-      p."salesCount",
-      b."id" AS "businessId",
-      b."name" AS "businessName"
-    FROM "Product" p
-    JOIN "Business" b ON b."id" = p."businessId"
-    WHERE ${visibilityConditions(query)}
-    ORDER BY p."salesCount" DESC, p."name" ASC
-    LIMIT ${query.pageSize} OFFSET ${offset}
-  `;
+  const { data, error } = await rpc()("find_public_products", {
+    p_category: query.category ?? null,
+    p_search: query.search ?? null,
+    p_limit: query.pageSize,
+    p_offset: (query.page - 1) * query.pageSize,
+  });
+  if (error) throw error;
+  return (data ?? []) as unknown as CatalogProduct[];
 }
 
 // Categorias realmente presentes en el catalogo visible: el filtro no ofrece
 // opciones que no devolverian nada.
 export async function listPublicCategories(): Promise<string[]> {
-  const rows = await db.$queryRaw<{ category: string }[]>`
-    SELECT DISTINCT p."category"
-    FROM "Product" p
-    JOIN "Business" b ON b."id" = p."businessId"
-    WHERE ${visibilityConditions({})}
-    ORDER BY p."category" ASC
-  `;
-
-  return rows.map((row) => row.category);
+  const { data, error } = await rpc()("list_public_categories");
+  if (error) throw error;
+  return ((data ?? []) as unknown as { category: string }[]).map(
+    (row) => row.category,
+  );
 }
 
 export async function findTopSellingProducts(

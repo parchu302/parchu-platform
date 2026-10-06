@@ -1,8 +1,13 @@
-import { Prisma, type Role } from "@prisma/client";
-
-import { hashPassword, verifyPassword } from "@/lib/password";
+import { createClient } from "@/lib/supabase/server";
+import type { Role } from "@/lib/types";
 import type { LoginInput, RegisterInput } from "@/lib/validations/auth";
-import { createUser, findUserByEmail } from "@/repositories/user-repository";
+
+// Autenticación con Supabase Auth. El hash de contraseña y la sesión los
+// administra Auth; ya no usamos argon2 ni JWE propio. El perfil (profiles) lo
+// crea el trigger on_auth_user_created, que fuerza el rol EMPRENDEDOR.
+//
+// La verificación de correo está HABILITADA: signUp no inicia sesión hasta que
+// el usuario confirma el enlace. El callback vive en /auth/confirm.
 
 export type AuthUser = {
   id: string;
@@ -10,70 +15,73 @@ export type AuthUser = {
 };
 
 export type RegisterOutcome =
+  | { ok: true; emailConfirmationRequired: boolean }
+  | { ok: false; reason: "SIGNUP_FAILED" };
+
+export type LoginResult =
   | { ok: true; user: AuthUser }
-  | { ok: false; reason: "EMAIL_TAKEN" };
-
-// Hash señuelo: cuando el correo no existe se verifica igual contra el, para
-// que el tiempo de respuesta no revele si la cuenta existe.
-let decoyHashPromise: Promise<string> | null = null;
-function getDecoyHash(): Promise<string> {
-  decoyHashPromise ??= hashPassword("contrasena-senuelo-sin-uso-real");
-  return decoyHashPromise;
-}
-
-function isUniqueEmailViolation(error: unknown): boolean {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2002"
-  );
-}
+  | { ok: false; reason: "INVALID" | "EMAIL_NOT_CONFIRMED" };
 
 export async function registerEmprendedor(
   input: RegisterInput,
+  emailRedirectTo: string,
 ): Promise<RegisterOutcome> {
-  const existing = await findUserByEmail(input.email);
-  if (existing) {
-    return { ok: false, reason: "EMAIL_TAKEN" };
+  const sb = await createClient();
+
+  const { data, error } = await sb.auth.signUp({
+    email: input.email.toLowerCase(),
+    password: input.password,
+    options: {
+      // firstName/lastName viajan en la metadata; el trigger los copia a
+      // profiles. El rol NO se toma de aquí (el trigger lo fuerza).
+      data: {
+        firstName: input.firstName,
+        lastName: input.lastName ?? null,
+      },
+      emailRedirectTo,
+    },
+  });
+
+  if (error || !data.user) {
+    return { ok: false, reason: "SIGNUP_FAILED" };
   }
 
-  const passwordHash = await hashPassword(input.password);
+  // Con "Confirm email" activo, signUp NO crea sesión (data.session === null):
+  // hay que confirmar el correo. Con protección anti-enumeración, un correo ya
+  // registrado devuelve una respuesta indistinguible, así que mostramos el
+  // mismo mensaje "revisá tu correo" sin revelar si la cuenta existe.
+  const emailConfirmationRequired = data.session === null;
 
-  try {
-    const user = await createUser({
-      email: input.email,
-      passwordHash,
-      firstName: input.firstName,
-      lastName: input.lastName,
-      role: "EMPRENDEDOR",
-    });
-
-    return { ok: true, user };
-  } catch (error) {
-    // Dos registros simultaneos con el mismo correo: el indice unico decide.
-    if (isUniqueEmailViolation(error)) {
-      return { ok: false, reason: "EMAIL_TAKEN" };
-    }
-    throw error;
-  }
+  return { ok: true, emailConfirmationRequired };
 }
 
-// Devuelve null tanto si el correo no existe como si la contrasena es
-// incorrecta: quien llama no puede distinguir los dos casos.
-export async function login(input: LoginInput): Promise<AuthUser | null> {
-  const user = await findUserByEmail(input.email);
+// Devuelve INVALID tanto si el correo no existe como si la contraseña es
+// incorrecta (Auth no los distingue). EMAIL_NOT_CONFIRMED es un caso aparte
+// para poder guiar al usuario a confirmar su correo.
+export async function login(input: LoginInput): Promise<LoginResult> {
+  const sb = await createClient();
 
-  if (!user) {
-    await verifyPassword(await getDecoyHash(), input.password);
-    return null;
+  const { data, error } = await sb.auth.signInWithPassword({
+    email: input.email.toLowerCase(),
+    password: input.password,
+  });
+
+  if (error) {
+    if (error.code === "email_not_confirmed") {
+      return { ok: false, reason: "EMAIL_NOT_CONFIRMED" };
+    }
+    return { ok: false, reason: "INVALID" };
   }
 
-  const passwordMatches = await verifyPassword(
-    user.passwordHash,
-    input.password,
-  );
-  if (!passwordMatches) {
-    return null;
+  if (!data.user) {
+    return { ok: false, reason: "INVALID" };
   }
 
-  return { id: user.id, role: user.role };
+  const { data: profile } = await sb
+    .from("profiles")
+    .select("role")
+    .eq("id", data.user.id)
+    .maybeSingle();
+
+  return { ok: true, user: { id: data.user.id, role: profile?.role ?? "EMPRENDEDOR" } };
 }

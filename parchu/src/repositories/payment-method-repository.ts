@@ -1,23 +1,31 @@
-import type { PaymentMethod, PaymentType } from "@prisma/client";
-import type { Prisma } from "@prisma/client";
-
-import { db } from "@/lib/db";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { Json } from "@/lib/supabase/database.types";
+import type { PaymentMethod, PaymentType } from "@/lib/types";
 
 export async function createPaymentMethod(
   businessId: string,
   type: PaymentType,
-  details: Prisma.InputJsonValue,
+  details: Json,
 ): Promise<PaymentMethod> {
-  return db.paymentMethod.create({
-    data: { businessId, type, details },
-  });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("PaymentMethod")
+    .insert({ businessId, type, details })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 export async function listPaymentMethodsByBusiness(
   businessId: string,
 ): Promise<PaymentMethod[]> {
-  return db.paymentMethod.findMany({
-    where: { businessId },
-    orderBy: { createdAt: "desc" },
-  });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("PaymentMethod")
+    .select("*")
+    .eq("businessId", businessId)
+    .order("createdAt", { ascending: false });
+  if (error) throw error;
+  return data;
 }

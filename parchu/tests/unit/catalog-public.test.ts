@@ -1,12 +1,18 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { db } from "@/lib/db";
-import { hashPassword } from "@/lib/password";
 import {
   countPublicProducts,
   listPublicCategories,
 } from "@/repositories/catalog-repository";
 import { getCatalogPage } from "@/services/catalog-service";
+
+import {
+  businessIds,
+  createTestUser,
+  deleteTestUsers,
+  must,
+  sb,
+} from "./helpers/supabase";
 
 const MARKER = "cat4";
 const CATEGORY = `Postres ${MARKER}`;
@@ -15,11 +21,12 @@ const OTHER_CATEGORY = `Bebidas ${MARKER}`;
 let approvedId: string;
 
 async function cleanup() {
-  await db.product.deleteMany({
-    where: { business: { name: { contains: MARKER } } },
-  });
-  await db.business.deleteMany({ where: { name: { contains: MARKER } } });
-  await db.user.deleteMany({ where: { email: { contains: MARKER } } });
+  const ids = await businessIds(MARKER);
+  if (ids.length > 0) {
+    await sb.from("Product").delete().in("businessId", ids);
+    await sb.from("Business").delete().in("id", ids);
+  }
+  await deleteTestUsers(MARKER);
 }
 
 async function createBusiness(
@@ -27,29 +34,27 @@ async function createBusiness(
   status: "APROBADO" | "PAUSADO",
   deleted = false,
 ) {
-  const owner = await db.user.create({
-    data: {
-      email: `${name.replace(/\s/g, "")}.${MARKER}@uni.edu`,
-      passwordHash: await hashPassword("ClaveSegura1"),
-      firstName: "Dueño",
-      role: "EMPRENDEDOR",
-    },
-    select: { id: true },
-  });
+  const ownerId = await createTestUser(
+    `${name.replace(/\s/g, "")}.${MARKER}@uni.edu`,
+    { firstName: "Dueño" },
+  );
 
-  const business = await db.business.create({
-    data: {
-      ownerId: owner.id,
-      name,
-      description: "d",
-      category: "Comida",
-      contactInfo: "c",
-      status,
-      deletedAt: deleted ? new Date() : null,
-      deleteReason: deleted ? "motivo" : null,
-    },
-    select: { id: true },
-  });
+  const business = must(
+    await sb
+      .from("Business")
+      .insert({
+        ownerId,
+        name,
+        description: "d",
+        category: "Comida",
+        contactInfo: "c",
+        status,
+        deletedAt: deleted ? new Date().toISOString() : null,
+        deleteReason: deleted ? "motivo" : null,
+      })
+      .select("id")
+      .single(),
+  );
 
   return business.id;
 }
@@ -61,20 +66,20 @@ beforeAll(async () => {
   const pausedId = await createBusiness(`Pausado ${MARKER}`, "PAUSADO");
   const deletedId = await createBusiness(`Eliminado ${MARKER}`, "APROBADO", true);
 
-  await db.product.createMany({
-    data: [
+  must(
+    await sb.from("Product").insert([
       // Visibles, con salesCount decreciente.
-      { businessId: approvedId, name: "Brownie clásico", price: 6000, category: CATEGORY, stock: 10, salesCount: 100 },
-      { businessId: approvedId, name: "Brownie de arequipe", price: 7000, category: CATEGORY, stock: 10, salesCount: 80 },
-      { businessId: approvedId, name: "Cheesecake", price: 15000, category: CATEGORY, stock: 5, salesCount: 60 },
+      { businessId: approvedId, name: "Brownie clásico", price: 6000, category: CATEGORY, stock: 10, salesCount: 100, status: "PUBLICADO" as const },
+      { businessId: approvedId, name: "Brownie de arequipe", price: 7000, category: CATEGORY, stock: 10, salesCount: 80, status: "PUBLICADO" as const },
+      { businessId: approvedId, name: "Cheesecake", price: 15000, category: CATEGORY, stock: 5, salesCount: 60, status: "PUBLICADO" as const },
       // Mismo termino de busqueda pero en OTRA categoria: prueba el AND.
-      { businessId: approvedId, name: "Malteada de brownie", price: 9000, category: OTHER_CATEGORY, stock: 8, salesCount: 90 },
+      { businessId: approvedId, name: "Malteada de brownie", price: 9000, category: OTHER_CATEGORY, stock: 8, salesCount: 90, status: "PUBLICADO" as const },
       // No visibles.
-      { businessId: approvedId, name: "Oculto", price: 1000, category: CATEGORY, stock: 1, salesCount: 999, status: "OCULTO" },
-      { businessId: pausedId, name: "Brownie pausado", price: 6000, category: CATEGORY, stock: 5, salesCount: 500 },
-      { businessId: deletedId, name: "Brownie eliminado", price: 6000, category: CATEGORY, stock: 5, salesCount: 500 },
-    ],
-  });
+      { businessId: approvedId, name: "Oculto", price: 1000, category: CATEGORY, stock: 1, salesCount: 999, status: "OCULTO" as const },
+      { businessId: pausedId, name: "Brownie pausado", price: 6000, category: CATEGORY, stock: 5, salesCount: 500, status: "PUBLICADO" as const },
+      { businessId: deletedId, name: "Brownie eliminado", price: 6000, category: CATEGORY, stock: 5, salesCount: 500, status: "PUBLICADO" as const },
+    ]).select("id"),
+  );
 });
 
 afterAll(cleanup);

@@ -1,0 +1,10 @@
+<!-- Plantilla de confirmación de correo (ParchU). El enlace apunta al callback
+     server-side /auth/confirm con token_hash, que ejecuta verifyOtp. -->
+<h2>Bienvenido a ParchU</h2>
+<p>Confirmá tu cuenta para empezar a vender en el tablero:</p>
+<p>
+  <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=signup">
+    Confirmar mi cuenta
+  </a>
+</p>
+<p>Si no creaste esta cuenta, podés ignorar este correo.</p>

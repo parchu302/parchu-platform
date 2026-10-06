@@ -1,14 +1,16 @@
 import { expect, type Page } from "@playwright/test";
-import type { OrderStatus } from "@prisma/client";
 
 import { decryptConfirmationCode } from "@/lib/confirmation-code";
-import { db } from "@/lib/db";
+import type { OrderStatus } from "@/lib/types";
 import { createGuestOrder } from "@/services/order-service";
 
 import {
   deleteBusinessesCascade,
+  ensureAdminLoggedIn,
   ensureUser,
-  loginThroughUi,
+  fail,
+  must,
+  sb,
 } from "./helpers";
 import { Given, Then, When } from "./world";
 
@@ -35,21 +37,27 @@ let fixtureCounter = 0;
 async function createOrderInStatus(businessId: string, status: OrderStatus) {
   fixtureCounter += 1;
 
-  const paymentMethod = await db.paymentMethod.create({
-    data: { businessId, type: "EFECTIVO", details: {} },
-    select: { id: true },
-  });
+  const paymentMethod = must(
+    await sb
+      .from("PaymentMethod")
+      .insert({ businessId, type: "EFECTIVO", details: {} })
+      .select("id")
+      .single(),
+  );
 
-  const product = await db.product.create({
-    data: {
-      businessId,
-      name: `${PRODUCT_NAME} ${fixtureCounter}`,
-      price: 6000,
-      category: "Comida",
-      stock: PRODUCT_STOCK,
-    },
-    select: { id: true },
-  });
+  const product = must(
+    await sb
+      .from("Product")
+      .insert({
+        businessId,
+        name: `${PRODUCT_NAME} ${fixtureCounter}`,
+        price: 6000,
+        category: "Comida",
+        stock: PRODUCT_STOCK,
+      })
+      .select("id")
+      .single(),
+  );
 
   const outcome = await createGuestOrder(
     [{ productId: product.id, quantity: QUANTITY }],
@@ -63,7 +71,7 @@ async function createOrderInStatus(businessId: string, status: OrderStatus) {
   if (!outcome.ok) throw new Error("no se pudo crear el pedido de prueba");
 
   if (status !== "PENDIENTE") {
-    await db.order.update({ where: { id: outcome.order.id }, data: { status } });
+    await updateOrder(outcome.order.id, { status });
   }
 
   return {
@@ -99,20 +107,19 @@ async function openCodePanel(page: Page, reference: string) {
   return row;
 }
 
-async function statusOf(orderId: string): Promise<OrderStatus> {
-  const order = await db.order.findUnique({ where: { id: orderId } });
-  return order!.status;
+async function getOrder(id: string) {
+  return must(await sb.from("Order").select("*").eq("id", id).single());
 }
 
-async function ensureAdminLoggedIn(page: Page) {
-  await page.goto("/admin");
-  if (/\/admin/.test(page.url())) return;
+async function updateOrder(
+  id: string,
+  patch: { status?: OrderStatus; failedAttempts?: number; codeLocked?: boolean },
+) {
+  fail((await sb.from("Order").update(patch).eq("id", id)).error);
+}
 
-  await loginThroughUi(
-    page,
-    String(process.env.ADMIN_EMAIL),
-    String(process.env.ADMIN_PASSWORD),
-  );
+async function statusOf(orderId: string): Promise<OrderStatus> {
+  return (await getOrder(orderId)).status;
 }
 
 // ---------- Dado ----------
@@ -144,7 +151,7 @@ Given(
 Given(
   "el pedido tiene 0 intentos fallidos registrados",
   async ({ state }) => {
-    const order = await db.order.findUnique({ where: { id: state.orderId } });
+    const order = await getOrder(state.orderId);
     expect(order?.failedAttempts).toBe(0);
   },
 );
@@ -152,10 +159,7 @@ Given(
 Given(
   "el pedido ya tiene 2 intentos fallidos registrados",
   async ({ page, state }) => {
-    await db.order.update({
-      where: { id: state.orderId },
-      data: { failedAttempts: 2 },
-    });
+    await updateOrder(state.orderId, { failedAttempts: 2 });
     await reloadOrdersPanel(page, state.businessId);
   },
 );
@@ -165,20 +169,23 @@ const UNLOCK_BUSINESS_NAME = "Desbloqueo E2E";
 // Emprendimiento propio para estos escenarios: no se reutiliza uno del seed,
 // cuyos pedidos y formas de pago no deben tocarse.
 async function createUnlockBusiness() {
-  await deleteBusinessesCascade({ name: UNLOCK_BUSINESS_NAME });
+  await deleteBusinessesCascade({ names: [UNLOCK_BUSINESS_NAME] });
   const ownerId = await ensureUser("desbloqueo.e2e@uni.edu");
 
-  const business = await db.business.create({
-    data: {
-      ownerId,
-      name: UNLOCK_BUSINESS_NAME,
-      description: "d",
-      category: "Comida",
-      contactInfo: "c",
-      status: "APROBADO",
-    },
-    select: { id: true },
-  });
+  const business = must(
+    await sb
+      .from("Business")
+      .insert({
+        ownerId,
+        name: UNLOCK_BUSINESS_NAME,
+        description: "d",
+        category: "Comida",
+        contactInfo: "c",
+        status: "APROBADO",
+      })
+      .select("id")
+      .single(),
+  );
 
   return business.id;
 }
@@ -188,10 +195,7 @@ Given(
   async ({ state }) => {
     const businessId = await createUnlockBusiness();
     const created = await createOrderInStatus(businessId, "ENTREGADO");
-    await db.order.update({
-      where: { id: created.orderId },
-      data: { failedAttempts: 3, codeLocked: true },
-    });
+    await updateOrder(created.orderId, { failedAttempts: 3, codeLocked: true });
 
     state.orderId = created.orderId;
     state.orderCode = created.code;
@@ -319,7 +323,7 @@ Then(
 );
 
 Then("el estado del pedido no cambia", async ({ state }) => {
-  const order = await db.order.findUnique({ where: { id: state.orderId } });
+  const order = await getOrder(state.orderId);
   // Ninguna de las transiciones rechazadas debe haber movido el pedido.
   expect(["PENDIENTE", "RECIBIDO", "ENTREGADO"]).toContain(order!.status);
 });
@@ -366,12 +370,17 @@ Then(
 );
 
 Then("libera el stock reservado del producto", async ({ state }) => {
-  const item = await db.orderItem.findFirst({
-    where: { orderId: state.orderId },
-  });
-  const product = await db.product.findUnique({
-    where: { id: item!.productId },
-  });
+  const item = must(
+    await sb
+      .from("OrderItem")
+      .select("productId")
+      .eq("orderId", state.orderId)
+      .limit(1)
+      .single(),
+  );
+  const product = must(
+    await sb.from("Product").select("stock").eq("id", item.productId).single(),
+  );
 
   expect(product?.stock).toBe(PRODUCT_STOCK);
 });
@@ -413,7 +422,7 @@ Then(
 );
 
 Then("reinicia el contador de intentos fallidos del pedido", async ({ state }) => {
-  const order = await db.order.findUnique({ where: { id: state.orderId } });
+  const order = await getOrder(state.orderId);
   expect(order?.failedAttempts).toBe(0);
 });
 
@@ -429,7 +438,7 @@ Then(
 Then(
   "incrementa el contador de intentos fallidos del pedido",
   async ({ state }) => {
-    const order = await db.order.findUnique({ where: { id: state.orderId } });
+    const order = await getOrder(state.orderId);
     expect(order?.failedAttempts).toBe(1);
   },
 );
@@ -437,7 +446,7 @@ Then(
 Then(
   "el sistema bloquea la validación del código para ese pedido",
   async ({ state }) => {
-    const order = await db.order.findUnique({ where: { id: state.orderId } });
+    const order = await getOrder(state.orderId);
     expect(order?.codeLocked).toBe(true);
     expect(order?.failedAttempts).toBe(3);
   },
@@ -457,7 +466,7 @@ Then(
 Then(
   "el sistema genera un nuevo código de confirmación único para el pedido",
   async ({ state }) => {
-    const order = await db.order.findUnique({ where: { id: state.orderId } });
+    const order = await getOrder(state.orderId);
     const nuevo = decryptConfirmationCode(order!.confirmationCodeEncrypted);
 
     expect(nuevo).not.toBe(state.orderCode);
@@ -468,7 +477,7 @@ Then(
 Then(
   "reinicia el contador de intentos fallidos del pedido a cero",
   async ({ state }) => {
-    const order = await db.order.findUnique({ where: { id: state.orderId } });
+    const order = await getOrder(state.orderId);
     expect(order?.failedAttempts).toBe(0);
   },
 );
@@ -476,7 +485,7 @@ Then(
 Then(
   "desbloquea la validación del código para ese pedido",
   async ({ state }) => {
-    const order = await db.order.findUnique({ where: { id: state.orderId } });
+    const order = await getOrder(state.orderId);
     expect(order?.codeLocked).toBe(false);
   },
 );
@@ -484,7 +493,7 @@ Then(
 Then(
   "actualiza el enlace de seguimiento del cliente con el nuevo código",
   async ({ page, state }) => {
-    const order = await db.order.findUnique({ where: { id: state.orderId } });
+    const order = await getOrder(state.orderId);
     const nuevo = decryptConfirmationCode(order!.confirmationCodeEncrypted);
 
     await page.goto(`/seguimiento/${state.trackingToken}`);
@@ -497,13 +506,13 @@ Then(
   async ({ state }) => {
     // No aparece en el listado de bloqueados, que es como el panel comunica
     // que no requiere intervención.
-    const order = await db.order.findUnique({ where: { id: state.orderId } });
+    const order = await getOrder(state.orderId);
     expect(order?.codeLocked).toBe(false);
   },
 );
 
 Then("el código de confirmación no cambia", async ({ state }) => {
-  const order = await db.order.findUnique({ where: { id: state.orderId } });
+  const order = await getOrder(state.orderId);
   expect(decryptConfirmationCode(order!.confirmationCodeEncrypted)).toBe(
     state.orderCode,
   );

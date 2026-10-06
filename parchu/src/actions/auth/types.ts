@@ -1,5 +1,5 @@
 export type AuthFormState = {
-  status: "idle" | "error";
+  status: "idle" | "error" | "success";
   message: string;
   errors?: Record<string, string[] | undefined>;
 };

@@ -1,4 +1,4 @@
-import type { PaymentType } from "@prisma/client";
+import type { PaymentType } from "@/lib/types";
 
 export type PaymentFieldSpec = {
   name: string;

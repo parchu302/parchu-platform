@@ -13,6 +13,19 @@ export function RegisterForm() {
     initialAuthFormState,
   );
 
+  if (state.status === "success") {
+    return (
+      <p
+        role="status"
+        data-testid="auth-success"
+        aria-live="polite"
+        className="rounded border-2 border-ink bg-mint/20 px-4 py-4 text-[14px] font-semibold text-ink"
+      >
+        {state.message}
+      </p>
+    );
+  }
+
   return (
     <form action={formAction} className="grid gap-4">
       <div className="grid gap-4 sm:grid-cols-2">

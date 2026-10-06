@@ -11,10 +11,19 @@ const FEATURED_LIMIT = 6;
 // Server Component: el tablero ya no usa datos de ejemplo, muestra los
 // productos mas vendidos reales y lleva al catalogo completo.
 export async function FeaturedBoard() {
-  const [products, categories] = await Promise.all([
-    findTopSellingProducts(FEATURED_LIMIT),
-    listPublicCategories(),
-  ]);
+  // El tablero es la vista de mayor trafico y se prerenderiza (ISR). Si la base
+  // no responde durante el build o una regeneracion, no debemos romper la
+  // pagina entera: mostramos el estado vacio y el proximo revalidate la rellena.
+  let products: Awaited<ReturnType<typeof findTopSellingProducts>> = [];
+  let categories: Awaited<ReturnType<typeof listPublicCategories>> = [];
+  try {
+    [products, categories] = await Promise.all([
+      findTopSellingProducts(FEATURED_LIMIT),
+      listPublicCategories(),
+    ]);
+  } catch (error) {
+    console.error("FeaturedBoard: no se pudo leer el catalogo publico", error);
+  }
 
   if (products.length === 0) {
     return (

@@ -5,7 +5,6 @@ import { redirect } from "next/navigation";
 import { readField } from "@/lib/form-data";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getRequestIp } from "@/lib/request-ip";
-import { createSessionCookie } from "@/lib/session-cookie";
 import { loginSchema } from "@/lib/validations/auth";
 import { login } from "@/services/auth-service";
 import { type AuthFormState } from "./types";
@@ -13,6 +12,8 @@ import { type AuthFormState } from "./types";
 // Mensaje unico para credenciales incorrectas y correo inexistente: no debe
 // poder deducirse si una cuenta existe.
 const INVALID_CREDENTIALS = "Credenciales inválidas";
+const EMAIL_NOT_CONFIRMED_MESSAGE =
+  "Confirmá tu correo para entrar. Te enviamos un enlace al registrarte (revisá spam).";
 const RATE_LIMITED_MESSAGE =
   "Demasiados intentos. Espera unos minutos e intenta de nuevo.";
 
@@ -47,13 +48,18 @@ export async function loginAction(
     return { status: "error", message: RATE_LIMITED_MESSAGE };
   }
 
-  const user = await login(parsed.data);
+  const result = await login(parsed.data);
 
-  if (!user) {
-    return { status: "error", message: INVALID_CREDENTIALS };
+  if (!result.ok) {
+    return {
+      status: "error",
+      message:
+        result.reason === "EMAIL_NOT_CONFIRMED"
+          ? EMAIL_NOT_CONFIRMED_MESSAGE
+          : INVALID_CREDENTIALS,
+    };
   }
 
-  await createSessionCookie({ userId: user.id, role: user.role });
-
-  redirect(user.role === "ADMIN" ? "/admin" : "/panel");
+  // signInWithPassword ya dejó la sesión en cookies (cliente SSR).
+  redirect(result.user.role === "ADMIN" ? "/admin" : "/panel");
 }

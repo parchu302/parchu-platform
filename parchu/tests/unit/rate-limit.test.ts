@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { db } from "@/lib/db";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 const MARKER = "ratelimit-test";
+const sb = createAdminClient();
 
 afterEach(async () => {
-  await db.rateLimitAttempt.deleteMany({ where: { key: { contains: MARKER } } });
+  await sb.from("RateLimitAttempt").delete().like("key", `%${MARKER}%`);
 });
 
 describe("checkRateLimit", () => {
@@ -64,7 +65,10 @@ describe("checkRateLimit", () => {
     await new Promise((resolve) => setTimeout(resolve, 5));
     await checkRateLimit(key, { limit: 5, windowMs: 1 });
 
-    const remaining = await db.rateLimitAttempt.count({ where: { key } });
+    const { count: remaining } = await sb
+      .from("RateLimitAttempt")
+      .select("*", { count: "exact", head: true })
+      .eq("key", key);
     // Solo debe quedar la ventana vigente, no la vieja.
     expect(remaining).toBe(1);
   });

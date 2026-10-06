@@ -1,12 +1,18 @@
 import { expect } from "@playwright/test";
 
-import { db } from "@/lib/db";
-
 import {
+  ADMIN_EMAIL,
+  ADMIN_PASSWORD,
   AUTH_SETTLED,
+  clearMailbox,
   countUsers,
   deleteUser,
+  ensureAdmin,
   ensureUser,
+  fetchConfirmationPath,
+  isSessionCookie,
+  must,
+  sb,
   fillRegisterForm,
   loginThroughUi,
   waitForFormOutcome,
@@ -61,15 +67,13 @@ Given(
 Given(
   "que la cuenta de administrador fue creada previamente en base de datos",
   async () => {
-    const email = process.env.ADMIN_EMAIL;
-    expect(email, "ADMIN_EMAIL debe estar definido en .env").toBeTruthy();
+    // El admin no se siembra por Prisma: se crea confirmado via Admin API.
+    await ensureAdmin();
 
-    const admin = await db.user.findUnique({
-      where: { email: String(email).toLowerCase() },
-    });
-    expect(admin?.role, "el admin debe existir sembrado por prisma db seed").toBe(
-      "ADMIN",
+    const admin = must(
+      await sb.from("profiles").select("role").eq("email", ADMIN_EMAIL).single(),
     );
+    expect(admin.role, "el admin debe existir con rol ADMIN").toBe("ADMIN");
   },
 );
 
@@ -82,6 +86,8 @@ When(
     state.password = VALID_PASSWORD;
     state.accountsBefore = await countUsers(email);
     state.formKind = "auth";
+    // Evita leer un correo de una corrida anterior al confirmar.
+    await clearMailbox();
     await fillRegisterForm(page, { email, password: VALID_PASSWORD });
   },
 );
@@ -110,6 +116,7 @@ When(
     state.email = email;
     state.accountsBefore = await countUsers(email);
     state.formKind = "auth";
+    await clearMailbox();
     await fillRegisterForm(page, { email, password: VALID_PASSWORD });
     await page.getByRole("button", { name: /crear cuenta/i }).click();
     await waitForFormOutcome(page, AUTH_SETTLED);
@@ -155,22 +162,16 @@ When(
 When(
   "el administrador ingresa su correo y contraseña correctos",
   async ({ page }) => {
-    await loginThroughUi(
-      page,
-      String(process.env.ADMIN_EMAIL),
-      String(process.env.ADMIN_PASSWORD),
-    );
+    await ensureAdmin();
+    await loginThroughUi(page, ADMIN_EMAIL, ADMIN_PASSWORD);
   },
 );
 
 When(
   "el administrador ingresa su correo y una contraseña incorrecta",
   async ({ page }) => {
-    await loginThroughUi(
-      page,
-      String(process.env.ADMIN_EMAIL),
-      "ClaveEquivocada9",
-    );
+    await ensureAdmin();
+    await loginThroughUi(page, ADMIN_EMAIL, "ClaveEquivocada9");
   },
 );
 
@@ -179,13 +180,37 @@ When(
 Then(
   "el sistema crea la cuenta del emprendedor con rol {string}",
   async ({ state }, rolLabel: string) => {
-    const user = await db.user.findUnique({
-      where: { email: state.email.toLowerCase() },
-    });
+    // La cuenta existe (Auth + profile creado por trigger) aunque aun no
+    // haya confirmado el correo.
+    const profile = must(
+      await sb
+        .from("profiles")
+        .select("role, email")
+        .eq("email", state.email.toLowerCase())
+        .single(),
+    );
+    expect(profile.role).toBe(ROLE_BY_LABEL[rolLabel]);
+  },
+);
 
-    expect(user).not.toBeNull();
-    expect(user?.role).toBe(ROLE_BY_LABEL[rolLabel]);
-    expect(user?.passwordHash).not.toContain(state.password);
+Then(
+  "le indica que debe confirmar su correo para activar la cuenta",
+  async ({ page }) => {
+    await expect(page.getByTestId("auth-success")).toBeVisible();
+    await expect(page.getByTestId("auth-success")).toContainText(
+      /confirmación a tu correo/i,
+    );
+    // Sin confirmar no hay sesion ni redireccion al panel.
+    await expect(page).toHaveURL(/\/registro$/);
+  },
+);
+
+When(
+  "el usuario abre el enlace de confirmación recibido por correo",
+  async ({ page, state }) => {
+    const path = await fetchConfirmationPath(state.email);
+    await page.goto(path);
+    await page.waitForURL("**/panel");
   },
 );
 
@@ -209,12 +234,13 @@ Then(
   },
 );
 
+// Supabase Auth aplica proteccion anti-enumeracion: registrar un correo ya
+// existente responde igual que un registro nuevo. Ya no hay error "en uso".
 Then(
-  "el sistema muestra un error indicando que el correo ya está en uso",
+  "el sistema responde con el mismo aviso de revisar el correo sin revelar que la cuenta ya existe",
   async ({ page }) => {
-    await expect(page.locator("#register-email-error")).toHaveText(
-      /ya está en uso/i,
-    );
+    await expect(page.getByTestId("auth-success")).toBeVisible();
+    await expect(page.locator("#register-email-error")).toHaveCount(0);
   },
 );
 
@@ -244,7 +270,7 @@ Then("la cuenta no se crea", async ({ page, state }) => {
 
 Then("el sistema autentica al emprendedor", async ({ page }) => {
   const cookies = await page.context().cookies();
-  expect(cookies.some((cookie) => cookie.name === "parchu_session")).toBe(true);
+  expect(cookies.some((cookie) => isSessionCookie(cookie.name))).toBe(true);
 });
 
 Then("lo redirige a su panel", async ({ page }) => {
@@ -256,13 +282,12 @@ Then(
   "el sistema lo autentica con rol {string}",
   async ({ page }, rolLabel: string) => {
     const cookies = await page.context().cookies();
-    expect(cookies.some((cookie) => cookie.name === "parchu_session")).toBe(
-      true,
-    );
+    expect(cookies.some((cookie) => isSessionCookie(cookie.name))).toBe(true);
 
-    const email = String(process.env.ADMIN_EMAIL).toLowerCase();
-    const admin = await db.user.findUnique({ where: { email } });
-    expect(admin?.role).toBe(ROLE_BY_LABEL[rolLabel]);
+    const admin = must(
+      await sb.from("profiles").select("role").eq("email", ADMIN_EMAIL).single(),
+    );
+    expect(admin.role).toBe(ROLE_BY_LABEL[rolLabel]);
   },
 );
 
@@ -290,5 +315,5 @@ Then("no concede acceso", async ({ page }) => {
   await expect(page).toHaveURL(/\/login$/);
 
   const cookies = await page.context().cookies();
-  expect(cookies.some((cookie) => cookie.name === "parchu_session")).toBe(false);
+  expect(cookies.some((cookie) => isSessionCookie(cookie.name))).toBe(false);
 });

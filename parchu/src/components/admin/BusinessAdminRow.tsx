@@ -5,7 +5,7 @@ import { useActionState, useState } from "react";
 import { businessAdminAction } from "@/actions/business/admin";
 import { initialAdminActionState } from "@/actions/business/types";
 import { StatusBadge } from "@/components/business/StatusBadge";
-import type { BusinessStatus } from "@prisma/client";
+import type { BusinessStatus } from "@/lib/types";
 
 type BusinessAdminRowProps = {
   id: string;

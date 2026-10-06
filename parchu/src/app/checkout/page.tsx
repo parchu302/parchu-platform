@@ -7,9 +7,10 @@ import {
   type CheckoutPaymentOption,
 } from "@/components/checkout/CheckoutForm";
 import { readCart } from "@/lib/cart";
-import { db } from "@/lib/db";
 import { formatPrice } from "@/lib/format";
+import { multiplyMoney, sumMoney } from "@/lib/money";
 import { PAYMENT_METHOD_LABEL } from "@/lib/payment-methods";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const metadata: Metadata = {
   title: "Tu pedido — ParchU",
@@ -37,21 +38,20 @@ export default async function CheckoutPage() {
 
   if (cart.length === 0) return <EmptyCart />;
 
-  const products = await db.product.findMany({
-    where: {
-      id: { in: cart.map((line) => line.productId) },
-      status: "PUBLICADO",
-      business: { status: "APROBADO", deletedAt: null },
-    },
-    select: {
-      id: true,
-      name: true,
-      price: true,
-      stock: true,
-      businessId: true,
-      business: { select: { name: true } },
-    },
-  });
+  const sb = createAdminClient();
+  const { data: products, error: productsError } = await sb
+    .from("Product")
+    .select(
+      "id, name, price, stock, businessId, business:Business!inner(name, status, deletedAt)",
+    )
+    .in(
+      "id",
+      cart.map((line) => line.productId),
+    )
+    .eq("status", "PUBLICADO")
+    .eq("business.status", "APROBADO")
+    .is("business.deletedAt", null);
+  if (productsError) throw productsError;
 
   if (products.length === 0) return <EmptyCart />;
 
@@ -63,18 +63,17 @@ export default async function CheckoutPage() {
     })
     .filter((line) => line !== null);
 
-  const total = lines.reduce(
-    (accumulator, line) =>
-      accumulator + Number(line.product.price) * line.quantity,
-    0,
+  const total = sumMoney(
+    lines.map((line) => multiplyMoney(line.product.price, line.quantity)),
   );
 
   const businessId = products[0]!.businessId;
-  const paymentMethods = await db.paymentMethod.findMany({
-    where: { businessId },
-    select: { id: true, type: true, details: true },
-    orderBy: { createdAt: "asc" },
-  });
+  const { data: paymentMethods, error: paymentMethodsError } = await sb
+    .from("PaymentMethod")
+    .select("id, type, details")
+    .eq("businessId", businessId)
+    .order("createdAt", { ascending: true });
+  if (paymentMethodsError) throw paymentMethodsError;
 
   const options: CheckoutPaymentOption[] = paymentMethods.map((method) => ({
     id: method.id,
@@ -115,7 +114,7 @@ export default async function CheckoutPage() {
               </div>
               <div className="flex items-center gap-3">
                 <span className="font-mono text-[14px] font-bold text-coral">
-                  {formatPrice(Number(line.product.price) * line.quantity)}
+                  {formatPrice(multiplyMoney(line.product.price, line.quantity))}
                 </span>
                 <form action={removeFromCartAction}>
                   <input

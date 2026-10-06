@@ -1,4 +1,4 @@
-import type { PaymentMethod } from "@prisma/client";
+import type { PaymentMethod } from "@/lib/types";
 
 import type { PaymentMethodInput } from "@/lib/validations/payment-method";
 import { createPaymentMethod } from "@/repositories/payment-method-repository";

@@ -1,8 +1,8 @@
 import { expect, type Page } from "@playwright/test";
 
-import { db } from "@/lib/db";
 import { CATALOG_PAGE_SIZE } from "@/services/catalog-service";
 
+import { must, sb } from "./helpers";
 import { Given, Then, When } from "./world";
 
 // Categoría del seed con 45 productos: exactamente 3 páginas de 20.
@@ -11,13 +11,25 @@ const PAGINATION_CATEGORY = "Bazar del campus";
 // Los valores esperados se calculan contra la base de datos en el momento de
 // aseverar, no se fijan a mano: así el test no se rompe cuando otros
 // escenarios agregan productos.
-const VISIBLE = {
-  status: "PUBLICADO",
-  business: { status: "APROBADO", deletedAt: null },
-} as const;
+const VISIBLE_SELECT = "id, business:Business!inner(status, deletedAt)";
 
-async function countVisible(where: object = {}) {
-  return db.product.count({ where: { ...VISIBLE, ...where } });
+type VisibleFilter = { category?: string; nameLike?: string };
+
+// Productos visibles al publico: PUBLICADO de un emprendimiento APROBADO y no
+// dado de baja.
+async function countVisible(filter: VisibleFilter = {}) {
+  let query = sb
+    .from("Product")
+    .select(VISIBLE_SELECT, { count: "exact", head: true })
+    .eq("status", "PUBLICADO")
+    .eq("business.status", "APROBADO")
+    .is("business.deletedAt", null);
+  if (filter.category) query = query.eq("category", filter.category);
+  if (filter.nameLike) query = query.ilike("name", `%${filter.nameLike}%`);
+
+  const { count, error } = await query;
+  if (error) throw error;
+  return count ?? 0;
 }
 
 async function renderedNames(page: Page): Promise<string[]> {
@@ -36,8 +48,8 @@ async function renderedCategories(page: Page): Promise<string[]> {
     );
 }
 
-async function expectTotals(page: Page, where: object = {}) {
-  const total = await countVisible(where);
+async function expectTotals(page: Page, filter: VisibleFilter = {}) {
+  const total = await countVisible(filter);
   const totalPages = Math.ceil(total / CATALOG_PAGE_SIZE);
 
   await expect(page.getByTestId("catalog-total")).toHaveText(String(total));
@@ -50,10 +62,9 @@ async function expectOrderedBySales(page: Page) {
   const names = await renderedNames(page);
   expect(names.length).toBeGreaterThan(0);
 
-  const products = await db.product.findMany({
-    where: { name: { in: names } },
-    select: { name: true, salesCount: true },
-  });
+  const products = must(
+    await sb.from("Product").select("name, salesCount").in("name", names),
+  );
   const salesByName = new Map(products.map((p) => [p.name, p.salesCount]));
   const rendered = names.map((name) => salesByName.get(name) ?? 0);
 
@@ -168,7 +179,7 @@ When(
     const term = url.searchParams.get("q") ?? "";
 
     expect(
-      await countVisible({ name: { contains: term, mode: "insensitive" } }),
+      await countVisible({ nameLike: term }),
     ).toBe(0);
   },
 );
@@ -206,10 +217,15 @@ Then(
     expect(names.length).toBeLessThanOrEqual(CATALOG_PAGE_SIZE);
 
     // Ninguno de un emprendimiento no visible.
-    const visibles = await db.product.count({
-      where: { ...VISIBLE, name: { in: names } },
-    });
-    expect(visibles).toBe(names.length);
+    const { count, error } = await sb
+      .from("Product")
+      .select(VISIBLE_SELECT, { count: "exact", head: true })
+      .eq("status", "PUBLICADO")
+      .eq("business.status", "APROBADO")
+      .is("business.deletedAt", null)
+      .in("name", names);
+    if (error) throw error;
+    expect(count).toBe(names.length);
   },
 );
 
@@ -226,7 +242,7 @@ Then(
 
     await expectTotals(page, {
       ...(category ? { category } : {}),
-      ...(search ? { name: { contains: search, mode: "insensitive" } } : {}),
+      ...(search ? { nameLike: search } : {}),
     });
   },
 );

@@ -55,7 +55,7 @@ export default async function PedidosPage({
               guestContact={order.guestContact}
               total={formatPrice(order.total)}
               paymentLabel={PAYMENT_METHOD_LABEL[order.paymentMethod.type]}
-              createdAt={DATE_FORMAT.format(order.createdAt)}
+              createdAt={DATE_FORMAT.format(new Date(order.createdAt))}
               codeLocked={order.codeLocked}
               failedAttempts={order.failedAttempts}
               items={order.items.map((item) => ({

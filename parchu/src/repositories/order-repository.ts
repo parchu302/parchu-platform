@@ -1,6 +1,5 @@
-import type { Order, OrderStatus, Prisma } from "@prisma/client";
-
-import { db } from "@/lib/db";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { Order, OrderStatus } from "@/lib/types";
 
 export class InsufficientStockError extends Error {
   constructor(readonly productId: string) {
@@ -12,8 +11,8 @@ export class InsufficientStockError extends Error {
 export type NewOrderItem = {
   productId: string;
   quantity: number;
-  unitPrice: Prisma.Decimal;
-  subtotal: Prisma.Decimal;
+  unitPrice: number;
+  subtotal: number;
 };
 
 export type NewOrder = {
@@ -21,149 +20,148 @@ export type NewOrder = {
   guestName: string;
   guestContact: string;
   paymentMethodId: string;
-  total: Prisma.Decimal;
+  total: number;
   confirmationCodeHash: string;
   confirmationCodeEncrypted: string;
   trackingToken: string;
   items: NewOrderItem[];
 };
 
-// Reserva de stock y creacion del pedido en UNA transaccion.
-//
-// El descuento es condicional (`WHERE stock >= cantidad`) en vez de leer y
-// luego escribir: asi dos compras simultaneas del ultimo articulo no pueden
-// dejar el stock negativo. La fila queda bloqueada por el UPDATE, de modo que
-// la segunda transaccion evalua la condicion sobre el valor ya descontado y
-// afecta cero filas.
+const INSUFFICIENT_STOCK_PREFIX = "INSUFFICIENT_STOCK:";
+
+// Reserva de stock y creacion del pedido en UNA transaccion: la RPC
+// create_order_with_stock_reservation hace el descuento condicional
+// (`WHERE stock >= cantidad`) y la insercion atomicamente. Si falta stock lanza
+// un error con message `INSUFFICIENT_STOCK:<productId>` que se mapea a
+// InsufficientStockError (la RPC revierte tambien los descuentos previos).
 export async function createOrderWithStockReservation(
   input: NewOrder,
 ): Promise<Order> {
-  return db.$transaction(async (tx) => {
-    for (const item of input.items) {
-      const affectedRows = await tx.$executeRaw`
-        UPDATE "Product"
-        SET "stock" = "stock" - ${item.quantity}
-        WHERE "id" = ${item.productId} AND "stock" >= ${item.quantity}
-      `;
-
-      // Cero filas afectadas = no habia stock suficiente. Lanzar revierte
-      // tambien los descuentos de los items anteriores.
-      if (affectedRows === 0) {
-        throw new InsufficientStockError(item.productId);
-      }
-    }
-
-    return tx.order.create({
-      data: {
-        businessId: input.businessId,
-        guestName: input.guestName,
-        guestContact: input.guestContact,
-        paymentMethodId: input.paymentMethodId,
-        total: input.total,
-        confirmationCodeHash: input.confirmationCodeHash,
-        confirmationCodeEncrypted: input.confirmationCodeEncrypted,
-        trackingToken: input.trackingToken,
-        items: {
-          create: input.items.map((item) => ({
-            productId: item.productId,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-            subtotal: item.subtotal,
-          })),
-        },
-      },
-    });
+  const sb = createAdminClient();
+  const { data, error } = await sb.rpc("create_order_with_stock_reservation", {
+    p_business_id: input.businessId,
+    p_guest_name: input.guestName,
+    p_guest_contact: input.guestContact,
+    p_payment_method_id: input.paymentMethodId,
+    p_total: input.total,
+    p_confirmation_code_hash: input.confirmationCodeHash,
+    p_confirmation_code_encrypted: input.confirmationCodeEncrypted,
+    p_tracking_token: input.trackingToken,
+    p_items: input.items.map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      subtotal: item.subtotal,
+    })),
   });
+
+  if (error) {
+    if (error.message.startsWith(INSUFFICIENT_STOCK_PREFIX)) {
+      throw new InsufficientStockError(
+        error.message.slice(INSUFFICIENT_STOCK_PREFIX.length).trim(),
+      );
+    }
+    throw error;
+  }
+
+  return data;
 }
 
 export async function findOrderByTrackingToken(trackingToken: string) {
-  return db.order.findUnique({
-    where: { trackingToken },
-    include: {
-      business: { select: { name: true, contactInfo: true } },
-      paymentMethod: { select: { type: true, details: true } },
-      items: {
-        include: { product: { select: { name: true } } },
-      },
-    },
-  });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("Order")
+    .select(
+      "*, business:Business(name, contactInfo), paymentMethod:PaymentMethod(type, details), items:OrderItem(*, product:Product(name))",
+    )
+    .eq("trackingToken", trackingToken)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
 export async function findOrderForBusiness(orderId: string, businessId: string) {
-  return db.order.findFirst({
-    where: { id: orderId, businessId },
-    include: { items: true },
-  });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("Order")
+    .select("*, items:OrderItem(*)")
+    .eq("id", orderId)
+    .eq("businessId", businessId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
 export async function listOrdersForBusiness(businessId: string) {
-  return db.order.findMany({
-    where: { businessId },
-    include: {
-      items: { include: { product: { select: { name: true } } } },
-      paymentMethod: { select: { type: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("Order")
+    .select(
+      "*, items:OrderItem(*, product:Product(name)), paymentMethod:PaymentMethod(type)",
+    )
+    .eq("businessId", businessId)
+    .order("createdAt", { ascending: false });
+  if (error) throw error;
+  return data;
 }
 
 export async function listLockedOrders() {
-  return db.order.findMany({
-    where: { codeLocked: true },
-    include: { business: { select: { name: true } } },
-    orderBy: { updatedAt: "desc" },
-  });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("Order")
+    .select("*, business:Business(name)")
+    .eq("codeLocked", true)
+    .order("updatedAt", { ascending: false });
+  if (error) throw error;
+  return data;
 }
 
-// Cancelar libera el stock reservado. Va en la misma transaccion que el cambio
-// de estado: si una de las dos partes fallara, no puede quedar stock devuelto
-// sobre un pedido que sigue vivo (ni al reves).
+// Cancelar libera el stock reservado. La RPC lo hace en la misma transaccion
+// que el cambio de estado: no puede quedar stock devuelto sobre un pedido vivo
+// (ni al reves).
 export async function cancelOrderReleasingStock(
   orderId: string,
   reason: string,
   items: { productId: string; quantity: number }[],
 ): Promise<Order> {
-  return db.$transaction(async (tx) => {
-    for (const item of items) {
-      await tx.product.update({
-        where: { id: item.productId },
-        data: { stock: { increment: item.quantity } },
-      });
-    }
-
-    return tx.order.update({
-      where: { id: orderId },
-      data: { status: "CANCELADO", cancelReason: reason },
-    });
+  const sb = createAdminClient();
+  const { data, error } = await sb.rpc("cancel_order_releasing_stock", {
+    p_order_id: orderId,
+    p_reason: reason,
+    p_items: items,
   });
+  if (error) throw error;
+  return data;
 }
 
-// Completar acredita las ventas. Tambien transaccional: el contador de "mas
-// vendidos" alimenta el catalogo publico y no puede desincronizarse del estado.
+// Completar acredita las ventas. Tambien transaccional (RPC): el contador de
+// "mas vendidos" alimenta el catalogo publico y no puede desincronizarse.
 export async function completeOrderCountingSales(
   orderId: string,
   items: { productId: string; quantity: number }[],
 ): Promise<Order> {
-  return db.$transaction(async (tx) => {
-    for (const item of items) {
-      await tx.product.update({
-        where: { id: item.productId },
-        data: { salesCount: { increment: item.quantity } },
-      });
-    }
-
-    return tx.order.update({
-      where: { id: orderId },
-      data: { status: "COMPLETADO", failedAttempts: 0 },
-    });
+  const sb = createAdminClient();
+  const { data, error } = await sb.rpc("complete_order_counting_sales", {
+    p_order_id: orderId,
+    p_items: items,
   });
+  if (error) throw error;
+  return data;
 }
 
 export async function updateOrderStatus(
   orderId: string,
   status: OrderStatus,
 ): Promise<Order> {
-  return db.order.update({ where: { id: orderId }, data: { status } });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("Order")
+    .update({ status })
+    .eq("id", orderId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 export async function registerFailedCodeAttempt(
@@ -171,10 +169,15 @@ export async function registerFailedCodeAttempt(
   failedAttempts: number,
   codeLocked: boolean,
 ): Promise<Order> {
-  return db.order.update({
-    where: { id: orderId },
-    data: { failedAttempts, codeLocked },
-  });
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("Order")
+    .update({ failedAttempts, codeLocked })
+    .eq("id", orderId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 export async function regenerateConfirmationCode(
@@ -182,13 +185,18 @@ export async function regenerateConfirmationCode(
   hash: string,
   encrypted: string,
 ): Promise<Order> {
-  return db.order.update({
-    where: { id: orderId },
-    data: {
+  const sb = createAdminClient();
+  const { data, error } = await sb
+    .from("Order")
+    .update({
       confirmationCodeHash: hash,
       confirmationCodeEncrypted: encrypted,
       failedAttempts: 0,
       codeLocked: false,
-    },
-  });
+    })
+    .eq("id", orderId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
