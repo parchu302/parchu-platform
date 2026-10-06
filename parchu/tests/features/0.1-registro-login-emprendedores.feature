@@ -9,13 +9,15 @@ Característica: Registro e inicio de sesión de emprendedores
     Cuando el usuario completa el formulario de registro con correo "ana@uni.edu", contraseña y datos básicos
     Y confirma el registro
     Entonces el sistema crea la cuenta del emprendedor con rol "Emprendedor"
-    Y le permite iniciar sesión con esas credenciales
+    Y le indica que debe confirmar su correo para activar la cuenta
+    Cuando el usuario abre el enlace de confirmación recibido por correo
+    Entonces le permite iniciar sesión con esas credenciales
     Y le indica que puede continuar registrando su emprendimiento
 
   Escenario: Registro rechazado por correo ya registrado
     Dado que ya existe una cuenta registrada con el correo "ana@uni.edu"
     Cuando el usuario intenta registrarse con el correo "ana@uni.edu"
-    Entonces el sistema muestra un error indicando que el correo ya está en uso
+    Entonces el sistema responde con el mismo aviso de revisar el correo sin revelar que la cuenta ya existe
     Y la cuenta no se crea
 
   Escenario: Registro rechazado por formato de correo inválido

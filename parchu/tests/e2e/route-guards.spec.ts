@@ -1,9 +1,17 @@
 import { expect, test } from "@playwright/test";
 
-import { hashPassword } from "@/lib/password";
-import { db } from "@/lib/db";
-
-import { tamperJweToken } from "../steps/tamper";
+import {
+  ADMIN_EMAIL,
+  ADMIN_PASSWORD,
+  clearRateLimit,
+  deleteUser,
+  ensureAdmin,
+  ensureUser,
+  fail,
+  must,
+  sb,
+} from "../steps/helpers";
+import { tamperSessionCookies } from "../steps/tamper";
 
 const EMPRENDEDOR_EMAIL = "guard-emprendedor@uni.edu";
 const PASSWORD = "ClaveSegura1";
@@ -16,9 +24,7 @@ async function loginAs(
   // Este archivo reutiliza el mismo email en varios tests seguidos; sin esto
   // el 6to login de la corrida choca con el limite de 5/5min por correo (ver
   // el mismo fix en tests/steps/helpers.ts:loginThroughUi).
-  await db.rateLimitAttempt.deleteMany({
-    where: { key: `login:email:${email.toLowerCase()}` },
-  });
+  await clearRateLimit(`login:email:${email.toLowerCase()}`);
 
   await page.goto("/login");
   await page.locator("#login-email").fill(email);
@@ -28,20 +34,13 @@ async function loginAs(
 }
 
 test.beforeAll(async () => {
-  await db.user.upsert({
-    where: { email: EMPRENDEDOR_EMAIL },
-    update: { passwordHash: await hashPassword(PASSWORD), role: "EMPRENDEDOR" },
-    create: {
-      email: EMPRENDEDOR_EMAIL,
-      passwordHash: await hashPassword(PASSWORD),
-      firstName: "Guard",
-      role: "EMPRENDEDOR",
-    },
-  });
+  // Usuario ya confirmado via Admin API (el login exige correo verificado).
+  await ensureUser(EMPRENDEDOR_EMAIL, PASSWORD, { firstName: "Guard" });
+  await ensureAdmin();
 });
 
 test.afterAll(async () => {
-  await db.user.deleteMany({ where: { email: EMPRENDEDOR_EMAIL } });
+  await deleteUser(EMPRENDEDOR_EMAIL);
 });
 
 test.describe("protección de rutas (deny by default)", () => {
@@ -68,11 +67,7 @@ test.describe("protección de rutas (deny by default)", () => {
   test("un administrador no aterriza en el panel del emprendedor", async ({
     page,
   }) => {
-    await loginAs(
-      page,
-      String(process.env.ADMIN_EMAIL),
-      String(process.env.ADMIN_PASSWORD),
-    );
+    await loginAs(page, ADMIN_EMAIL, ADMIN_PASSWORD);
 
     await page.goto("/panel");
 
@@ -83,13 +78,11 @@ test.describe("protección de rutas (deny by default)", () => {
     await loginAs(page, EMPRENDEDOR_EMAIL, PASSWORD);
 
     const cookies = await page.context().cookies();
-    const session = cookies.find((c) => c.name === "parchu_session");
-    expect(session).toBeTruthy();
+    const tampered = tamperSessionCookies(cookies);
+    expect(tampered.length).toBeGreaterThan(0);
 
     await page.context().clearCookies();
-    await page.context().addCookies([
-      { ...session!, value: tamperJweToken(session!.value) },
-    ]);
+    await page.context().addCookies(tampered);
 
     await page.goto("/panel");
     await expect(page).toHaveURL(/\/login$/);
@@ -123,19 +116,31 @@ test.describe("desbloqueo de pedidos restringido al administrador", () => {
   }) => {
     await loginAs(page, EMPRENDEDOR_EMAIL, PASSWORD);
 
-    const locked = await db.order.findFirst({ where: { codeLocked: true } });
+    const { data: locked, error } = await sb
+      .from("Order")
+      .select("id, codeLocked, confirmationCodeHash")
+      .eq("codeLocked", true)
+      .limit(1)
+      .maybeSingle();
+    fail(error);
     test.skip(!locked, "no hay pedidos bloqueados sembrados");
 
     // Invocación directa, saltándose la interfaz: requireRole debe rechazarla
     // igual, porque las Server Actions son alcanzables por POST directo.
-    const before = await db.order.findUnique({ where: { id: locked!.id } });
+    const before = locked!;
 
     await page.request.post("/admin/pedidos", {
       form: { orderId: locked!.id },
     });
 
-    const after = await db.order.findUnique({ where: { id: locked!.id } });
-    expect(after?.codeLocked).toBe(true);
-    expect(after?.confirmationCodeHash).toBe(before?.confirmationCodeHash);
+    const after = must(
+      await sb
+        .from("Order")
+        .select("codeLocked, confirmationCodeHash")
+        .eq("id", locked!.id)
+        .single(),
+    );
+    expect(after.codeLocked).toBe(true);
+    expect(after.confirmationCodeHash).toBe(before.confirmationCodeHash);
   });
 });

@@ -1,11 +1,10 @@
 import path from "node:path";
 
 import { expect, type Page } from "@playwright/test";
-import type { BusinessStatus } from "@prisma/client";
+import type { BusinessStatus } from "@/lib/types";
 
-import { db } from "@/lib/db";
 
-import { deleteBusinessesCascade, ensureUser } from "./helpers";
+import { deleteBusinessesCascade, ensureUser, must, sb } from "./helpers";
 import { Given, Then, When } from "./world";
 
 const VALID_IMAGE_PATH = path.join(process.cwd(), "tests/fixtures/product-image.png");
@@ -47,19 +46,46 @@ async function waitForCatalogOutcome(page: Page) {
 async function createBusinessWithStatus(status: BusinessStatus) {
   const ownerId = await ensureUser(EMPRENDEDOR_EMAIL);
 
-  await deleteBusinessesCascade({ name: { contains: MARKER } });
+  await deleteBusinessesCascade({ like: `%${MARKER}%` });
 
-  return db.business.create({
-    data: {
-      ownerId,
-      name: BUSINESS_NAME,
-      description: "descripción",
-      category: "Comida",
-      contactInfo: "300 000 0000",
-      status,
-    },
-    select: { id: true },
-  });
+  return must(
+    await sb
+      .from("Business")
+      .insert({
+        ownerId,
+        name: BUSINESS_NAME,
+        description: "descripción",
+        category: "Comida",
+        contactInfo: "300 000 0000",
+        status,
+      })
+      .select("id")
+      .single(),
+  );
+}
+
+async function productByName(businessId: string) {
+  const { data, error } = await sb
+    .from("Product")
+    .select("*")
+    .eq("businessId", businessId)
+    .eq("name", PRODUCT_NAME)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function countByBusiness(
+  table: "Product" | "PaymentMethod",
+  businessId: string,
+) {
+  const { count, error } = await sb
+    .from(table)
+    .select("id", { count: "exact", head: true })
+    .eq("businessId", businessId);
+  if (error) throw error;
+  return count ?? 0;
 }
 
 async function fillProductForm(
@@ -196,9 +222,7 @@ When(
 Then(
   "el sistema crea el producto asociado a su emprendimiento con estado {string}",
   async ({ state }, statusLabel: string) => {
-    const product = await db.product.findFirst({
-      where: { businessId: state.businessId, name: PRODUCT_NAME },
-    });
+    const product = await productByName(state.businessId);
 
     expect(product).not.toBeNull();
     expect(product?.status).toBe(statusLabel === "Publicado" ? "PUBLICADO" : "OCULTO");
@@ -208,9 +232,7 @@ Then(
 );
 
 Then("guarda la imagen comprimida y codificada en base64", async ({ state }) => {
-  const product = await db.product.findFirst({
-    where: { businessId: state.businessId, name: PRODUCT_NAME },
-  });
+  const product = await productByName(state.businessId);
 
   expect(product?.imageBase64).toMatch(/^data:image\/jpeg;base64,/);
 });
@@ -226,7 +248,7 @@ Then(
 
 Then("el producto no se crea", async ({ state }) => {
   expect(
-    await db.product.count({ where: { businessId: state.businessId } }),
+    await countByBusiness("Product", state.businessId),
   ).toBe(0);
 });
 
@@ -245,9 +267,13 @@ Then(
 Then(
   "el sistema asocia la forma de pago a su emprendimiento",
   async ({ state }) => {
-    const method = await db.paymentMethod.findFirst({
-      where: { businessId: state.businessId },
-    });
+    const { data: method, error } = await sb
+      .from("PaymentMethod")
+      .select("*")
+      .eq("businessId", state.businessId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
 
     expect(method?.type).toBe("TRANSFERENCIA");
     expect(method?.details).toMatchObject({
@@ -272,7 +298,7 @@ Then(
 
 Then("la forma de pago no se registra", async ({ state }) => {
   expect(
-    await db.paymentMethod.count({ where: { businessId: state.businessId } }),
+    await countByBusiness("PaymentMethod", state.businessId),
   ).toBe(0);
 });
 

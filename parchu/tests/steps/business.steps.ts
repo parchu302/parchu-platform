@@ -1,12 +1,14 @@
 import { expect, type Page } from "@playwright/test";
-import type { BusinessStatus } from "@prisma/client";
-
-import { db } from "@/lib/db";
+import type { BusinessStatus } from "@/lib/types";
 
 import {
   BUSINESS_SETTLED,
   deleteBusinessesCascade,
+  ensureAdminLoggedIn,
   ensureUser,
+  fail,
+  must,
+  sb,
   fillBusinessForm,
   loginThroughUi,
   waitForFormOutcome,
@@ -35,23 +37,26 @@ const BASE_INPUT = {
 // Los nombres de emprendimiento son unicos globalmente e incluyen los dados de
 // baja, asi que entre escenarios hay que borrarlos de verdad, no marcarlos.
 async function resetBusinesses() {
-  await db.notification.deleteMany({
-    where: { user: { email: { contains: "e2e" } } },
-  });
-  await deleteBusinessesCascade({
-    OR: [{ name: { contains: MARKER } }, { name: "Postres Ana" }],
-  });
-}
-
-async function ensureAdminLoggedIn(page: Page) {
-  await page.goto("/admin");
-  if (/\/admin/.test(page.url())) return;
-
-  await loginThroughUi(
-    page,
-    String(process.env.ADMIN_EMAIL),
-    String(process.env.ADMIN_PASSWORD),
+  const users = must(
+    await sb.from("profiles").select("id").like("email", "%e2e%"),
   );
+  if (users.length > 0) {
+    fail(
+      (
+        await sb
+          .from("Notification")
+          .delete()
+          .in(
+            "userId",
+            users.map((u) => u.id),
+          )
+      ).error,
+    );
+  }
+  await deleteBusinessesCascade({
+    like: `%${MARKER}%`,
+    names: ["Postres Ana"],
+  });
 }
 
 async function createBusiness(
@@ -60,10 +65,33 @@ async function createBusiness(
   status: BusinessStatus = "PENDIENTE",
 ) {
   const ownerId = await ensureUser(ownerEmail);
-  return db.business.create({
-    data: { ...BASE_INPUT, name, ownerId, status },
-    select: { id: true, name: true, ownerId: true },
-  });
+  return must(
+    await sb
+      .from("Business")
+      .insert({ ...BASE_INPUT, name, ownerId, status })
+      .select("id, name, ownerId")
+      .single(),
+  );
+}
+
+async function businessByName(name: string) {
+  return must(await sb.from("Business").select("*").eq("name", name).single());
+}
+
+async function businessById(id: string) {
+  return must(await sb.from("Business").select("*").eq("id", id).single());
+}
+
+async function countRows(
+  table: "Business" | "Product" | "Order",
+  build: (q: any) => any = (q) => q,
+  select = "id",
+): Promise<number> {
+  const { count, error } = await build(
+    sb.from(table).select(select, { count: "exact", head: true }),
+  );
+  if (error) throw error;
+  return count ?? 0;
 }
 
 function adminRow(page: Page, name: string) {
@@ -245,34 +273,32 @@ When(
 Then(
   "el sistema crea el emprendimiento con estado {string}",
   async ({ state }, statusLabel: string) => {
-    const business = await db.business.findUnique({
-      where: { name: state.businessName },
-    });
+    const business = await businessByName(state.businessName);
 
-    expect(business).not.toBeNull();
-    expect(business?.status).toBe(STATUS_BY_LABEL[statusLabel]);
-    expect(business?.deletedAt).toBeNull();
-    state.businessId = business!.id;
+    expect(business.status).toBe(STATUS_BY_LABEL[statusLabel]);
+    expect(business.deletedAt).toBeNull();
+    state.businessId = business.id;
   },
 );
 
 Then(
   "el sistema crea el nuevo emprendimiento con estado {string}",
   async ({ state }, statusLabel: string) => {
-    const business = await db.business.findUnique({
-      where: { name: state.businessName },
-    });
-    expect(business?.status).toBe(STATUS_BY_LABEL[statusLabel]);
+    const business = await businessByName(state.businessName);
+    expect(business.status).toBe(STATUS_BY_LABEL[statusLabel]);
   },
 );
 
 Then("lo asocia a la cuenta del emprendedor", async ({ state }) => {
-  const business = await db.business.findUnique({
-    where: { name: state.businessName },
-    include: { owner: { select: { email: true } } },
-  });
+  const business = must(
+    await sb
+      .from("Business")
+      .select("id, owner:profiles!inner(email)")
+      .eq("name", state.businessName)
+      .single(),
+  );
 
-  expect(business?.owner.email).toBe(EMPRENDEDOR_EMAIL);
+  expect(business.owner.email).toBe(EMPRENDEDOR_EMAIL);
 });
 
 Then("el emprendimiento no se crea", async ({ page, state }) => {
@@ -280,7 +306,7 @@ Then("el emprendimiento no se crea", async ({ page, state }) => {
 
   if (state.businessName) {
     expect(
-      await db.business.count({ where: { name: state.businessName } }),
+      await countRows("Business", (q) => q.eq("name", state.businessName)),
     ).toBe(state.businessesBefore);
   }
 });
@@ -296,10 +322,12 @@ Then(
 
 Then("el nuevo emprendimiento no se crea", async ({ state }) => {
   // Sigue existiendo solo el original (de otro dueño).
-  const businesses = await db.business.findMany({
-    where: { name: state.businessName },
-    include: { owner: { select: { email: true } } },
-  });
+  const businesses = must(
+    await sb
+      .from("Business")
+      .select("id, owner:profiles!inner(email)")
+      .eq("name", state.businessName),
+  );
 
   expect(businesses).toHaveLength(1);
   expect(businesses[0]?.owner.email).toBe(OTRO_EMPRENDEDOR_EMAIL);
@@ -309,12 +337,16 @@ Then("el sistema muestra estadísticas básicas", async ({ page }) => {
   await expect(page.locator("[data-stat]")).toHaveCount(4);
 
   const expected = {
-    businesses: await db.business.count({ where: { deletedAt: null } }),
-    products: await db.product.count({ where: { business: { deletedAt: null } } }),
-    orders: await db.order.count(),
-    pending: await db.business.count({
-      where: { deletedAt: null, status: "PENDIENTE" },
-    }),
+    businesses: await countRows("Business", (q) => q.is("deletedAt", null)),
+    products: await countRows(
+      "Product",
+      (q) => q.is("business.deletedAt", null),
+      "id, business:Business!inner(deletedAt)",
+    ),
+    orders: await countRows("Order"),
+    pending: await countRows("Business", (q) =>
+      q.is("deletedAt", null).eq("status", "PENDIENTE"),
+    ),
   };
 
   for (const [key, value] of Object.entries(expected)) {
@@ -327,18 +359,19 @@ Then("el sistema muestra estadísticas básicas", async ({ page }) => {
 Then(
   "el sistema cambia el estado del emprendimiento a {string}",
   async ({ state }, statusLabel: string) => {
-    const business = await db.business.findUnique({
-      where: { id: state.businessId },
-    });
-    expect(business?.status).toBe(STATUS_BY_LABEL[statusLabel]);
+    const business = await businessById(state.businessId);
+    expect(business.status).toBe(STATUS_BY_LABEL[statusLabel]);
   },
 );
 
 async function expectNotification(ownerEmail: string, pattern: RegExp) {
-  const notifications = await db.notification.findMany({
-    where: { user: { email: ownerEmail } },
-    orderBy: { createdAt: "desc" },
-  });
+  const notifications = must(
+    await sb
+      .from("Notification")
+      .select("message, createdAt, user:profiles!inner(email)")
+      .eq("user.email", ownerEmail)
+      .order("createdAt", { ascending: false }),
+  );
 
   expect(notifications.length).toBeGreaterThan(0);
   expect(notifications[0]?.message).toMatch(pattern);
@@ -372,12 +405,11 @@ Then(
 Then(
   "el sistema marca el emprendimiento como eliminado registrando la fecha y el motivo",
   async ({ state }) => {
-    const business = await db.business.findUnique({
-      where: { id: state.businessId },
-    });
+    const business = await businessById(state.businessId);
 
-    expect(business?.deletedAt).toBeInstanceOf(Date);
-    expect(business?.deleteReason).toBe("Incumplimiento de normas");
+    expect(business.deletedAt).not.toBeNull();
+    expect(Number.isNaN(Date.parse(business.deletedAt!))).toBe(false);
+    expect(business.deleteReason).toBe("Incumplimiento de normas");
   },
 );
 
@@ -385,14 +417,18 @@ Then(
   "oculta el emprendimiento y sus productos de la vista pública",
   async ({ state }) => {
     // Toda lectura de la aplicacion filtra deletedAt.
-    const visible = await db.business.findFirst({
-      where: { id: state.businessId, deletedAt: null },
-    });
-    expect(visible).toBeNull();
+    expect(
+      await countRows(
+        "Business",
+        (q) => q.eq("id", state.businessId).is("deletedAt", null),
+      ),
+    ).toBe(0);
 
-    const visibleProducts = await db.product.count({
-      where: { businessId: state.businessId, business: { deletedAt: null } },
-    });
+    const visibleProducts = await countRows(
+      "Product",
+      (q) => q.eq("businessId", state.businessId).is("business.deletedAt", null),
+      "id, business:Business!inner(deletedAt)",
+    );
     expect(visibleProducts).toBe(0);
   },
 );
@@ -400,30 +436,32 @@ Then(
 Then("conserva el histórico de pedidos asociados", async ({ state }) => {
   // La baja es logica: la fila sobrevive y las claves foraneas de los pedidos
   // siguen siendo validas (aun no hay pedidos hasta la Fase 5).
-  const raw = await db.business.findUnique({ where: { id: state.businessId } });
+  const raw = await businessById(state.businessId);
   expect(raw).not.toBeNull();
 
-  const orders = await db.order.count({ where: { businessId: state.businessId } });
+  const orders = await countRows("Order", (q) =>
+    q.eq("businessId", state.businessId),
+  );
   expect(orders).toBe(
-    await db.order.count({ where: { businessId: state.businessId } }),
+    await countRows("Order", (q) => q.eq("businessId", state.businessId)),
   );
 });
 
 Then("oculta sus productos de la vista pública", async ({ state }) => {
-  const visibleProducts = await db.product.count({
-    where: { businessId: state.businessId, business: { status: "APROBADO" } },
-  });
+  const visibleProducts = await countRows(
+    "Product",
+    (q) => q.eq("businessId", state.businessId).eq("business.status", "APROBADO"),
+    "id, business:Business!inner(status)",
+  );
   expect(visibleProducts).toBe(0);
 });
 
 Then(
   "sus productos vuelven a ser visibles en la vista pública",
   async ({ state }) => {
-    const business = await db.business.findUnique({
-      where: { id: state.businessId },
-    });
-    expect(business?.status).toBe("APROBADO");
-    expect(business?.deletedAt).toBeNull();
+    const business = await businessById(state.businessId);
+    expect(business.status).toBe("APROBADO");
+    expect(business.deletedAt).toBeNull();
   },
 );
 
@@ -437,8 +475,6 @@ Then(
 );
 
 Then("el estado del emprendimiento no cambia", async ({ state }) => {
-  const business = await db.business.findUnique({
-    where: { id: state.businessId },
-  });
-  expect(business?.status).toBe("PENDIENTE");
+  const business = await businessById(state.businessId);
+  expect(business.status).toBe("PENDIENTE");
 });

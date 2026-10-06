@@ -1,10 +1,8 @@
 import { expect, type Page } from "@playwright/test";
 
 import { decryptConfirmationCode } from "@/lib/confirmation-code";
-import { db } from "@/lib/db";
-import { hashPassword } from "@/lib/password";
 
-import { deleteBusinessesCascade } from "./helpers";
+import { deleteBusinessesCascade, ensureUser, fail, must, sb } from "./helpers";
 import { Given, Then, When } from "./world";
 
 const MARKER = "CHECKOUT-E2E";
@@ -24,61 +22,65 @@ const TRANSFER_DETAILS = {
 };
 
 async function resetCheckoutData() {
-  await deleteBusinessesCascade({ name: BUSINESS_NAME });
+  await deleteBusinessesCascade({ names: [BUSINESS_NAME] });
 }
 
 async function createShop(stock: number) {
   await resetCheckoutData();
 
-  const owner = await db.user.upsert({
-    where: { email: OWNER_EMAIL },
-    update: {},
-    create: {
-      email: OWNER_EMAIL,
-      passwordHash: await hashPassword("ClaveSegura1"),
-      firstName: "Cocina",
-      role: "EMPRENDEDOR",
-    },
-    select: { id: true },
+  const ownerId = await ensureUser(OWNER_EMAIL, "ClaveSegura1", {
+    firstName: "Cocina",
   });
 
-  const business = await db.business.create({
-    data: {
-      ownerId: owner.id,
-      name: BUSINESS_NAME,
-      description: "Comida del campus",
-      category: "Comida",
-      contactInfo: "300 000 0000",
-      status: "APROBADO",
-    },
-    select: { id: true },
-  });
+  const business = must(
+    await sb
+      .from("Business")
+      .insert({
+        ownerId,
+        name: BUSINESS_NAME,
+        description: "Comida del campus",
+        category: "Comida",
+        contactInfo: "300 000 0000",
+        status: "APROBADO",
+      })
+      .select("id")
+      .single(),
+  );
 
-  await db.paymentMethod.create({
-    data: { businessId: business.id, type: "EFECTIVO", details: {} },
-  });
+  fail(
+    (
+      await sb
+        .from("PaymentMethod")
+        .insert({ businessId: business.id, type: "EFECTIVO", details: {} })
+    ).error,
+  );
 
   // Segunda forma de pago (no efectivo), sembrada despues para no alterar
   // cual selecciona selectFirstPaymentMethod() en el resto de escenarios.
-  await db.paymentMethod.create({
-    data: {
-      businessId: business.id,
-      type: "TRANSFERENCIA",
-      details: TRANSFER_DETAILS,
-    },
-  });
+  fail(
+    (
+      await sb.from("PaymentMethod").insert({
+        businessId: business.id,
+        type: "TRANSFERENCIA",
+        details: TRANSFER_DETAILS,
+      })
+    ).error,
+  );
 
-  const product = await db.product.create({
-    data: {
-      businessId: business.id,
-      name: PRODUCT_NAME,
-      description: "Combo de prueba",
-      price: 12000,
-      category: "Comida",
-      stock,
-    },
-    select: { id: true },
-  });
+  const product = must(
+    await sb
+      .from("Product")
+      .insert({
+        businessId: business.id,
+        name: PRODUCT_NAME,
+        description: "Combo de prueba",
+        price: 12000,
+        category: "Comida",
+        stock,
+      })
+      .select("id")
+      .single(),
+  );
 
   return { businessId: business.id, productId: product.id };
 }
@@ -114,7 +116,24 @@ async function selectFirstPaymentMethod(page: Page) {
 }
 
 async function ordersForShop() {
-  return db.order.count({ where: { business: { name: BUSINESS_NAME } } });
+  const { count, error } = await sb
+    .from("Order")
+    .select("id, business:Business!inner(name)", { count: "exact", head: true })
+    .eq("business.name", BUSINESS_NAME);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+async function latestOrder() {
+  return must(
+    await sb
+      .from("Order")
+      .select("*, business:Business!inner(name)")
+      .eq("business.name", BUSINESS_NAME)
+      .order("createdAt", { ascending: false })
+      .limit(1)
+      .single(),
+  );
 }
 
 async function expectPaymentInstructionsVisible(page: Page) {
@@ -146,10 +165,10 @@ Given(
 
     // Otra persona se lleva la última unidad después de que este cliente la
     // puso en su carrito: el servidor debe detectarlo al confirmar.
-    await db.product.update({
-      where: { id: shop.productId },
-      data: { stock: 0 },
-    });
+    fail(
+      (await sb.from("Product").update({ stock: 0 }).eq("id", shop.productId))
+        .error,
+    );
 
     await fillGuestData(page);
     await selectFirstPaymentMethod(page);
@@ -235,10 +254,7 @@ When("el cliente confirma la compra", async ({ page }) => {
 Then(
   "el sistema crea el pedido con estado {string}",
   async ({ state }, statusLabel: string) => {
-    const order = await db.order.findFirst({
-      where: { business: { name: BUSINESS_NAME } },
-      orderBy: { createdAt: "desc" },
-    });
+    const order = await latestOrder();
 
     expect(order).not.toBeNull();
     expect(order?.status).toBe(statusLabel.toUpperCase());
@@ -252,10 +268,7 @@ Then(
 Then(
   "genera un código de confirmación único asociado al pedido",
   async ({ page }) => {
-    const order = await db.order.findFirst({
-      where: { business: { name: BUSINESS_NAME } },
-      orderBy: { createdAt: "desc" },
-    });
+    const order = await latestOrder();
 
     expect(order?.confirmationCodeHash).toBeTruthy();
     expect(order?.confirmationCodeEncrypted).toBeTruthy();
@@ -276,10 +289,7 @@ Then(
 Then(
   "genera un enlace de seguimiento único para que el cliente consulte el estado y el código del pedido",
   async ({ page }) => {
-    const order = await db.order.findFirst({
-      where: { business: { name: BUSINESS_NAME } },
-      orderBy: { createdAt: "desc" },
-    });
+    const order = await latestOrder();
 
     expect(page.url()).toContain(`/seguimiento/${order!.trackingToken}`);
     // No adivinable: 32 bytes de entropía.
