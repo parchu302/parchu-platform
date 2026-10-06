@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -14,6 +15,16 @@ import { type AuthFormState } from "./types";
 // que el login: muchos estudiantes de un mismo edificio comparten IP publica,
 // y en semana de bienvenida muchos podrian registrarse a la vez legitimamente.
 const IP_LIMIT = { limit: 100, windowMs: 60 * 60_000 };
+
+const CHECK_EMAIL_MESSAGE =
+  "Te enviamos un enlace de confirmación a tu correo. Revisá tu bandeja (y la carpeta de spam) para activar la cuenta.";
+
+async function getOrigin(): Promise<string> {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  return `${proto}://${host}`;
+}
 
 export async function registerAction(
   _prevState: AuthFormState,
@@ -44,19 +55,25 @@ export async function registerAction(
     };
   }
 
-  const outcome = await registerEmprendedor(parsed.data);
+  const origin = await getOrigin();
+  const outcome = await registerEmprendedor(
+    parsed.data,
+    `${origin}/auth/confirm`,
+  );
 
   if (!outcome.ok) {
     return {
       status: "error",
-      message: "",
-      errors: { email: ["Ese correo ya está en uso"] },
+      message: "No pudimos crear la cuenta. Intentá de nuevo en un momento.",
     };
   }
 
-  // signUp (con confirmación de correo deshabilitada) ya inició sesión y dejó
-  // la cookie (cliente SSR).
-  //
+  // Con verificación de correo activa, no hay sesión aún: se avisa que revise
+  // su bandeja. El enlace del correo cae en /auth/confirm y de ahí a /panel.
+  if (outcome.emailConfirmationRequired) {
+    return { status: "success", message: CHECK_EMAIL_MESSAGE };
+  }
+
   // redirect lanza una excepcion de control de flujo: nada despues se ejecuta,
   // por eso va fuera de cualquier try/catch.
   redirect("/panel");

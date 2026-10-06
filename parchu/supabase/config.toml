@@ -39,7 +39,7 @@ allowed_mime_types = ["image/png", "image/jpeg", "image/webp"]
 [auth]
 enabled = true
 site_url = "http://localhost:3000"
-additional_redirect_urls = ["http://localhost:3000"]
+additional_redirect_urls = ["http://localhost:3000", "http://localhost:3000/auth/confirm"]
 jwt_expiry = 28800            # 8h, igual que la sesión actual
 enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
@@ -47,8 +47,14 @@ enable_signup = true
 
 [auth.email]
 enable_signup = true
-enable_confirmations = false  # registro directo, sin verificación por correo (no hay SMTP)
+enable_confirmations = true   # verificación de correo OBLIGATORIA (requerimiento)
 double_confirm_changes = true
+
+# Template de confirmación: enlaza al callback server-side con token_hash.
+# En local, los correos quedan en Inbucket (http://localhost:54324).
+[auth.email.template.confirmation]
+subject = "Confirmá tu cuenta en ParchU"
+content_path = "./supabase/templates/confirmation.html"
 
 # Hook que inyecta el rol (EMPRENDEDOR/ADMIN) como custom claim en el JWT.
 [auth.hook.custom_access_token]
